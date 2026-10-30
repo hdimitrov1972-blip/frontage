@@ -1,0 +1,17 @@
+# Nothing private ever goes into this public project:
+# no data, no reports, no notebooks (they contain the email text), no passwords.
+*.csv
+*.xlsx
+*.pdf
+*.zip
+*.ipynb
+*.log
+*.lock
+*.env
+.env*
+rclone.conf
+lighthouse_json/
+reports/
+drive/
+content/
+__pycache__/

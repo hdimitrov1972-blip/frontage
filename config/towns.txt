@@ -1,0 +1,31 @@
+# Town queue: searched from the top, one town at a time, when ready leads run low.
+# A town is skipped if it was searched in the last 90 days. Reorder or add lines freely.
+# Big cities (Dublin, Cork, Galway) are searched by area and take about 3 days each.
+Limerick
+Ennis
+Waterford
+Kilkenny
+Drogheda
+Dundalk
+Bray
+Greystones
+Swords
+Balbriggan
+Navan
+Naas
+Newbridge
+Tralee
+Killarney
+Carlow
+Athlone
+Mullingar
+Wexford
+Sligo
+Letterkenny
+Clonmel
+Tullamore
+Portlaoise
+Castlebar
+Dublin
+Galway
+Cork

@@ -1,0 +1,17 @@
+{
+  "drive_folder": "Frontage",
+  "notebooks_folder": "Colab Notebooks",
+  "notebooks": {
+    "search": "Frontage Search v2.3.ipynb",
+    "pipeline": "Frontage Pipeline v1.2.ipynb",
+    "sender": "Frontage Sender v2.2 LIVE.ipynb"
+  },
+  "ready_leads_min": 90,
+  "search_again_after_days": 90,
+  "send_window": {
+    "timezone": "Europe/Dublin",
+    "weekdays": [0, 1, 2, 3, 4],
+    "start": "08:00",
+    "end": "17:00"
+  }
+}

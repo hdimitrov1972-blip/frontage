@@ -1,0 +1,87 @@
+name: Frontage daily
+
+# live = the real day (search when needed, pipeline, sender to businesses)
+# test = sender only, one email per mailbox to TEST_EMAIL; nothing on Drive changes except the log
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "live or test"
+        type: choice
+        options: [test, live]
+        default: test
+  schedule:
+    - cron: "30 8 * * 1-5"      # back-up start, 08:30 UTC on weekdays; the exact start comes from the Hostinger timer
+
+permissions:
+  contents: read
+
+concurrency:
+  group: frontage
+  cancel-in-progress: false
+
+jobs:
+  day:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    env:
+      MODE: ${{ github.event_name == 'schedule' && 'live' || inputs.mode }}
+      DRIVE_DIR: /content/drive/MyDrive/Frontage
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install packages
+        run: |
+          pip install -q -r requirements.txt
+          curl -fsSL https://rclone.org/install.sh | sudo bash > /dev/null
+
+      - name: Connect Google Drive
+        env:
+          RCLONE_DRIVE_TOKEN: ${{ secrets.RCLONE_DRIVE_TOKEN }}
+        run: |
+          mkdir -p ~/.config/rclone
+          printf '[gdrive]\ntype = drive\nscope = drive\nskip_gdocs = true\ntoken = %s\n' "$RCLONE_DRIVE_TOKEN" > ~/.config/rclone/rclone.conf
+          sudo mkdir -p /content && sudo chown "$USER" /content
+
+      - name: Download from Drive
+        id: download
+        run: |
+          rclone copy "gdrive:Frontage" "$DRIVE_DIR" \
+            --filter "+ /towns/**" --filter "+ /latest/4A_reports.zip" --filter "+ /latest/*.csv" \
+            --filter "+ /*" --filter "- **" --quiet
+          mkdir -p /content/notebooks
+          for nb in $(jq -r '.notebooks[] | @base64' config/frontage.json); do
+            name=$(echo "$nb" | base64 -d)
+            rclone copyto "gdrive:Colab Notebooks/$name" "/content/notebooks/$name" --quiet
+          done
+          echo "downloaded: $(find "$DRIVE_DIR" -type f | wc -l) files, $(ls /content/notebooks | wc -l) notebooks"
+
+      - name: Run the day
+        env:
+          SMTP_PASSWORD_1: ${{ secrets.SMTP_PASSWORD_1 }}
+          SMTP_PASSWORD_2: ${{ secrets.SMTP_PASSWORD_2 }}
+          SMTP_PASSWORD_3: ${{ secrets.SMTP_PASSWORD_3 }}
+          SMTP_PASSWORD_4: ${{ secrets.SMTP_PASSWORD_4 }}
+          SMTP_PASSWORD_5: ${{ secrets.SMTP_PASSWORD_5 }}
+          PLACES_API_KEY: ${{ secrets.PLACES_API_KEY }}
+          PAGESPEED_KEY: ${{ secrets.PAGESPEED_KEY }}
+          TEST_EMAIL: ${{ secrets.TEST_EMAIL }}
+        run: python runner/daily.py run --mode "$MODE"
+
+      - name: Never keep a half-finished pipeline
+        if: always()
+        run: python runner/daily.py finalize
+
+      - name: Save to Drive
+        if: always() && steps.download.outcome == 'success'
+        run: |
+          if [ "$MODE" = "live" ]; then
+            rclone copy "$DRIVE_DIR" "gdrive:Frontage" --checksum --quiet
+          else
+            rclone copy "$DRIVE_DIR/runs" "gdrive:Frontage/runs" --checksum --quiet
+          fi
+          echo "saved to Drive (mode: $MODE)"
