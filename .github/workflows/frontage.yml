@@ -106,7 +106,7 @@ jobs:
           PLACES_API_KEY: ${{ secrets.PLACES_API_KEY }}
           PAGESPEED_KEY: ${{ secrets.PAGESPEED_KEY }}
           TEST_EMAIL: ${{ secrets.TEST_EMAIL }}
-        run: python runner/daily.py run --mode "$MODE"
+        run: FRONTAGE_RCLONE=1 python runner/daily.py run --mode "$MODE"
 
       - name: Never keep a half-finished pipeline
         if: always()

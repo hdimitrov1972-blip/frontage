@@ -29,7 +29,7 @@ OPT_OUT = re.compile(r"\b(unsubscribe|remove (me|us)|take (me|us) off|stop (emai
 AUTO_SUBJECT = re.compile(r"(auto(matic)?[ -]?(reply|response)|out of (the )?office|away from|"
                           r"thank(s| you) for (your (email|message|enquiry)|contacting)|we (have )?received)", re.I)
 EMAIL_RE = re.compile(r"[A-Za-z0-9._%+'-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
-REPLY_COLS = ["seen_at", "received", "mailbox", "message_id", "kind", "from", "matched_email", "subject"]
+REPLY_COLS = ["seen_at", "received", "mailbox", "message_id", "kind", "from", "matched_email", "subject", "first_lines"]
 BOUNCE_LIMIT = 0.03
 BOUNCE_MIN = 3
 BOUNCE_WINDOW_DAYS = 7
@@ -166,6 +166,11 @@ def run(home, passwords, today=None, fetch=None, log=print):
 
     rpath = os.path.join(home, "0_replies.csv")
     old = _read(rpath)
+    if len(old) and any(c not in old.columns for c in REPLY_COLS):     # older file: add the new columns once
+        for c in REPLY_COLS:
+            if c not in old.columns:
+                old[c] = ""
+        old[REPLY_COLS].to_csv(rpath, index=False)
     seen = set(old.get("message_id", pd.Series(dtype=str)))
     new_rows, counts = [], {"bounce": 0, "optout": 0, "reply": 0, "auto": 0, "mailboxes_read": 0}
     since = today - dt.timedelta(days=LOOK_BACK_DAYS)
@@ -189,7 +194,8 @@ def run(home, passwords, today=None, fetch=None, log=print):
                 new_rows.append({"seen_at": today.isoformat(), "received": received, "mailbox": address,
                                  "message_id": mid, "kind": kind,
                                  "from": email.utils.parseaddr(str(msg.get("From", "")))[1].lower(),
-                                 "matched_email": matched, "subject": str(msg.get("Subject", ""))[:150]})
+                                 "matched_email": matched, "subject": str(msg.get("Subject", ""))[:150],
+                                 "first_lines": _first_lines(_text(msg))[:300] if kind != "bounce" else ""})
             counts["mailboxes_read"] += 1
         except Exception as e:
             log(f"[replies] {address.split('@')[0]}@ could not be read ({type(e).__name__}: {str(e)[:150]})")

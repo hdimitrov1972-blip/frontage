@@ -20,6 +20,7 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 
+import fixreply
 import followup
 import replies
 import summary
@@ -189,6 +190,14 @@ def run(mode):
     # 0. Replies and bounces first, so today's sending already skips them
     if mode in ("live", "replies"):
         ok &= check_replies(log)
+        try:
+            c = fixreply.run(DRIVE, passwords.get("hello@frontage.agency", ""), os.environ.get("TEST_EMAIL", ""),
+                             log=lambda m: say(m, log))
+            if c["yes_replies"]:
+                say(f"[fix reply] 'yes' replies: {c['yes_replies']}   ready in hello@ Drafts: {c['drafted']}   "
+                    f"need you: {c['needs_you']}", log, note=True)
+        except Exception as e:
+            say(f"[fix reply] FAILED ({type(e).__name__})", log)
         if mode == "replies":
             say("RESULT: " + ("OK" if ok else "SOMETHING FAILED"), log, note=True)
             return 0 if ok else 1
@@ -243,7 +252,9 @@ def run(mode):
     # 3b. Weekend follow-up, then the Sunday summary
     if mode == "live":
         inside_f, when_f = in_send_window("followup_window")
-        if inside_f:
+        if inside_f and not CONFIG.get("followup_enabled"):
+            say("[follow-up] switched off in config/frontage.json until you approve the text", log)
+        elif inside_f:
             c = followup.run(DRIVE, passwords, log=lambda m: say(m, log))
             say(f"[follow-up] sent: {c['sent']}   failed: {c['failed']}   by text: {c['per_variant']}   "
                 f"still waiting: {max(c['candidates'] - c['sent'], 0)}", log, note=True)
