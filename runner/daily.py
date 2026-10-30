@@ -187,6 +187,22 @@ def run(mode):
             f"{sorted(followup.load_texts(DRIVE))}   businesses waiting for a follow-up: {c['candidates']}", log, note=True)
         return 0 if c["sent"] else 1
 
+    if mode == "fixreply-test":                 # a real 'yes' reply, built for a recent business, emailed only to you
+        to = os.environ.get("TEST_EMAIL", "").strip()
+        guide = json.load(open(os.path.join(DRIVE, "fix_guide.json"), encoding="utf-8"))
+        sent = read_csv(os.path.join(DRIVE, "0_sent_log.csv")).sort_values("sent_at", ascending=False)
+        for _, r in sent.head(15).iterrows():
+            audits = fixreply.load_audit(DRIVE, r["place_id"])
+            text = fixreply.compose(r["name"], audits, guide) if audits else None
+            if text:
+                fixreply.notify("TEST — this is what a business that answers \"yes\" would get (built from "
+                                f"{r['name']}'s own speed test). Nothing was sent to them.\n\n" + "-" * 40 + "\n\n" + text,
+                                f"TEST: ready reply for {r['name']}", passwords["hello@frontage.agency"], to)
+                say("[fix reply test] example sent to you", log, note=True)
+                return 0
+        say("[fix reply test] no recent business with a saved speed test found", log, note=True)
+        return 1
+
     # 0. Replies and bounces first, so today's sending already skips them
     if mode in ("live", "replies"):
         ok &= check_replies(log)
@@ -308,6 +324,6 @@ def finalize():
 if __name__ == "__main__":
     if len(sys.argv) >= 2 and sys.argv[1] == "finalize":
         sys.exit(finalize())
-    if len(sys.argv) == 4 and sys.argv[1] == "run" and sys.argv[2] == "--mode" and sys.argv[3] in ("live", "test", "replies", "followup-test"):
+    if len(sys.argv) == 4 and sys.argv[1] == "run" and sys.argv[2] == "--mode" and sys.argv[3] in ("live", "test", "replies", "followup-test", "fixreply-test"):
         sys.exit(run(sys.argv[3]))
     raise SystemExit(__doc__)

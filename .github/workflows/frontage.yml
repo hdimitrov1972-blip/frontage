@@ -13,7 +13,7 @@ on:
       mode:
         description: "what to run"
         type: choice
-        options: [test, live, replies, followup-test, upgrade-sender, check-mailboxes, analyze-audits]
+        options: [test, live, replies, followup-test, fixreply-test, upgrade-sender, check-mailboxes, analyze-audits]
         default: test
   schedule:                     # UTC = Irish time in winter, Irish time minus 1 hour in summer
     - cron: "17 6 * * *"        # every day: search and pipeline when stock is low; sender on weekdays
@@ -96,7 +96,7 @@ jobs:
         run: python tools/check_mailboxes.py
 
       - name: Run the day
-        if: env.MODE == 'live' || env.MODE == 'test' || env.MODE == 'replies' || env.MODE == 'followup-test'
+        if: env.MODE == 'live' || env.MODE == 'test' || env.MODE == 'replies' || env.MODE == 'followup-test' || env.MODE == 'fixreply-test'
         env:
           SMTP_PASSWORD_1: ${{ secrets.SMTP_PASSWORD_1 }}
           SMTP_PASSWORD_2: ${{ secrets.SMTP_PASSWORD_2 }}
@@ -113,7 +113,7 @@ jobs:
         run: python runner/daily.py finalize
 
       - name: Save to Drive
-        if: always() && steps.download.outcome == 'success' && (env.MODE == 'live' || env.MODE == 'test' || env.MODE == 'replies' || env.MODE == 'followup-test')
+        if: always() && steps.download.outcome == 'success' && (env.MODE == 'live' || env.MODE == 'test' || env.MODE == 'replies' || env.MODE == 'followup-test' || env.MODE == 'fixreply-test')
         run: |
           if [ "$MODE" = "live" ] || [ "$MODE" = "replies" ]; then
             rclone copy "$DRIVE_DIR" "gdrive:Frontage" --checksum --quiet
