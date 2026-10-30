@@ -5,6 +5,7 @@ name: Frontage daily
 # upgrade-sender = one-off: makes "Frontage Sender v2.3 LIVE" on Drive from v2.2 (tools/upgrade_sender.py)
 # followup-test = one follow-up per mailbox, only to TEST_EMAIL (needs followup_text_*.txt on Drive)
 # replies = only the reply and bounce stopper (reads the mailboxes, updates do-not-contact)
+# analyze-audits = one-off: counts which problems the saved speed tests found (result in runs/)
 # check-mailboxes = one-off, read-only: can the runner read the 5 mailboxes (counts only)
 on:
   workflow_dispatch:
@@ -12,7 +13,7 @@ on:
       mode:
         description: "what to run"
         type: choice
-        options: [test, live, replies, followup-test, upgrade-sender, check-mailboxes]
+        options: [test, live, replies, followup-test, upgrade-sender, check-mailboxes, analyze-audits]
         default: test
   schedule:                     # UTC = Irish time in winter, Irish time minus 1 hour in summer
     - cron: "17 6 * * *"        # every day: search and pipeline when stock is low; sender on weekdays
@@ -76,6 +77,13 @@ jobs:
           python tools/upgrade_sender.py /content/v22.ipynb "/content/Frontage Sender v2.3 LIVE.ipynb"
           rclone copyto "/content/Frontage Sender v2.3 LIVE.ipynb" "gdrive:Colab Notebooks/Frontage Sender v2.3 LIVE.ipynb"
           echo "saved: Colab Notebooks/Frontage Sender v2.3 LIVE.ipynb (v2.2 kept as it was)"
+
+      - name: Count website problems in all speed tests (one-off)
+        if: env.MODE == 'analyze-audits'
+        run: |
+          rclone copy "gdrive:Frontage/lighthouse_json" /content/lighthouse_json --quiet --transfers 16
+          python tools/analyze_audits.py /content/lighthouse_json /content/audit_problems.csv
+          rclone copyto /content/audit_problems.csv "gdrive:Frontage/runs/audit_problems.csv"
 
       - name: Check the mailboxes (read-only)
         if: env.MODE == 'check-mailboxes'
