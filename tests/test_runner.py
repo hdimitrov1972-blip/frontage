@@ -190,5 +190,18 @@ daily.finalize()
 check("stopped job: finalize restores Drive", open(home + "/LEADS_MASTER.csv").read() == master_before
       and not os.path.exists(daily.MARKER))
 
+# 8. Sender v2.3: an old sent log (6 columns) gets the message_id column; new sends carry an id
+home = fresh_drive(200)
+pd.DataFrame([{"sent_at": "2026-10-09T10:00:00", "place_id": "old1", "email": "info@old.ie", "name": "Old",
+               "subject": "x", "mailbox": "hello@frontage.agency"}]).to_csv(home + "/0_sent_log.csv", index=False)
+os.remove(os.environ["FAKE_SENT_FILE"]) if os.path.exists(os.environ["FAKE_SENT_FILE"]) else None
+daily.run("live")
+log = pd.read_csv(home + "/0_sent_log.csv", dtype=str).fillna("")
+check("v2.3: old send kept, message_id column added", "message_id" in log.columns and (log.place_id == "old1").sum() == 1)
+new_rows = log[log.place_id != "old1"]
+check("v2.3: every new send has its Message-ID", len(new_rows) == len(sent_lines()) > 0
+      and new_rows.message_id.str.match(r"^<.+@frontage\.agency>$").all())
+check("v2.3: backup of the old log kept", os.path.exists(home + "/0_sent_log_backup_before_v23.csv"))
+
 shutil.rmtree(CONTENT, ignore_errors=True)
 print("\nALL RUNNER TESTS PASSED")

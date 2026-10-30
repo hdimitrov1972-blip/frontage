@@ -4,7 +4,7 @@
   "notebooks": {
     "search": "Frontage Search v2.3.ipynb",
     "pipeline": "Frontage Pipeline v1.2.ipynb",
-    "sender": "Frontage Sender v2.2 LIVE.ipynb"
+    "sender": "Frontage Sender v2.3 LIVE.ipynb"
   },
   "ready_leads_min": 150,
   "search_again_after_days": 90,

@@ -2,13 +2,15 @@ name: Frontage daily
 
 # live = the real day (search when needed, pipeline, sender to businesses)
 # test = sender only, one email per mailbox to TEST_EMAIL; nothing on Drive changes except the log
+# upgrade-sender = one-off: makes "Frontage Sender v2.3 LIVE" on Drive from v2.2 (tools/upgrade_sender.py)
+# check-mailboxes = one-off, read-only: can the runner read the 5 mailboxes (counts only)
 on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "live or test"
+        description: "what to run"
         type: choice
-        options: [test, live]
+        options: [test, live, upgrade-sender, check-mailboxes]
         default: test
   schedule:                     # UTC = Irish time in winter, Irish time minus 1 hour in summer
     - cron: "17 6 * * *"        # every day: search and pipeline when stock is low; sender on weekdays
@@ -58,11 +60,33 @@ jobs:
           mkdir -p /content/notebooks
           for nb in $(jq -r '.notebooks[] | @base64' config/frontage.json); do
             name=$(echo "$nb" | base64 -d)
-            rclone copyto "gdrive:Colab Notebooks/$name" "/content/notebooks/$name" --quiet
+            rclone copyto "gdrive:Colab Notebooks/$name" "/content/notebooks/$name" --quiet || echo "not on Drive yet: $name"
           done
           echo "downloaded: $(find "$DRIVE_DIR" -type f | wc -l) files, $(ls /content/notebooks | wc -l) notebooks"
 
+      - name: Make Sender v2.3 on Drive (one-off)
+        if: env.MODE == 'upgrade-sender'
+        run: |
+          if rclone lsf "gdrive:Colab Notebooks/" | grep -qx "Frontage Sender v2.3 LIVE.ipynb"; then
+            echo "Sender v2.3 is already on Drive; nothing done."; exit 0
+          fi
+          rclone copyto "gdrive:Colab Notebooks/Frontage Sender v2.2 LIVE.ipynb" /content/v22.ipynb
+          python tools/upgrade_sender.py /content/v22.ipynb "/content/Frontage Sender v2.3 LIVE.ipynb"
+          rclone copyto "/content/Frontage Sender v2.3 LIVE.ipynb" "gdrive:Colab Notebooks/Frontage Sender v2.3 LIVE.ipynb"
+          echo "saved: Colab Notebooks/Frontage Sender v2.3 LIVE.ipynb (v2.2 kept as it was)"
+
+      - name: Check the mailboxes (read-only)
+        if: env.MODE == 'check-mailboxes'
+        env:
+          SMTP_PASSWORD_1: ${{ secrets.SMTP_PASSWORD_1 }}
+          SMTP_PASSWORD_2: ${{ secrets.SMTP_PASSWORD_2 }}
+          SMTP_PASSWORD_3: ${{ secrets.SMTP_PASSWORD_3 }}
+          SMTP_PASSWORD_4: ${{ secrets.SMTP_PASSWORD_4 }}
+          SMTP_PASSWORD_5: ${{ secrets.SMTP_PASSWORD_5 }}
+        run: python tools/check_mailboxes.py
+
       - name: Run the day
+        if: env.MODE == 'live' || env.MODE == 'test'
         env:
           SMTP_PASSWORD_1: ${{ secrets.SMTP_PASSWORD_1 }}
           SMTP_PASSWORD_2: ${{ secrets.SMTP_PASSWORD_2 }}
@@ -79,7 +103,7 @@ jobs:
         run: python runner/daily.py finalize
 
       - name: Save to Drive
-        if: always() && steps.download.outcome == 'success'
+        if: always() && steps.download.outcome == 'success' && (env.MODE == 'live' || env.MODE == 'test')
         run: |
           if [ "$MODE" = "live" ]; then
             rclone copy "$DRIVE_DIR" "gdrive:Frontage" --checksum --quiet
