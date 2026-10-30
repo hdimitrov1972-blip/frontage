@@ -12,6 +12,7 @@ import email.policy
 import imaplib
 import os
 import re
+from urllib.parse import unquote
 
 import pandas as pd
 
@@ -32,6 +33,15 @@ REPLY_COLS = ["seen_at", "received", "mailbox", "message_id", "kind", "from", "m
 BOUNCE_LIMIT = 0.03
 BOUNCE_MIN = 3
 BOUNCE_WINDOW_DAYS = 7
+
+
+def clean_address(raw):
+    """Same cleaning as the sender: 'mailto%20info@x.ie' or 'u003einfo@x.ie' -> 'info@x.ie'."""
+    a = unquote(str(raw or "")).strip().strip("<>\"' ").lower()
+    for junk in ("mailto:", "mailto"):
+        if a.startswith(junk):
+            a = a[len(junk):].strip()
+    return re.sub(r"^(u003e|u003c|\\u003e|\\u003c)+", "", a).strip()
 
 
 def _read(path):
@@ -98,14 +108,14 @@ def classify(msg, sent_emails, sent_domains):
         matched = sent_domains[dom]
     else:
         return None, None
+    if OPT_OUT.search(subject) or OPT_OUT.search(_first_lines(text)):
+        return "optout", matched              # a refusal counts even when a machine sent it
     auto = (str(msg.get("Auto-Submitted", "no")).lower() not in ("", "no")
             or msg.get("X-Autoreply") or msg.get("X-Autorespond")
             or str(msg.get("Precedence", "")).lower() in ("auto_reply", "bulk", "junk")
             or AUTO_SUBJECT.search(subject))
     if auto:
         return "auto", matched
-    if OPT_OUT.search(subject) or OPT_OUT.search(_first_lines(text)):
-        return "optout", matched
     return "reply", matched
 
 
@@ -192,7 +202,12 @@ def run(home, passwords, today=None, fetch=None, log=print):
         have = {l.strip().lower() for l in open(dnc_path, encoding="utf-8") if "@" in l}
     else:
         open(dnc_path, "w").write("email_or_domain\n")
-    add = sorted({r["matched_email"] for r in new_rows if r["kind"] in ("bounce", "optout")} - have)
+    every = pd.concat([_read(rpath), pd.DataFrame(new_rows)], ignore_index=True) if new_rows else _read(rpath)
+    stop = set()
+    for _, r in every.iterrows():
+        if r.get("kind") in ("bounce", "optout") and "@" in str(r.get("matched_email", "")):
+            stop |= {str(r["matched_email"]).lower(), clean_address(r["matched_email"])}
+    add = sorted({a for a in stop if "@" in a} - have)
     if add:
         with open(dnc_path, "a", encoding="utf-8") as f:
             for a in add:

@@ -103,4 +103,15 @@ def broken_fetch(address, pw, since):
     yield
 c3 = replies.run(home, pw, today=TODAY, fetch=broken_fetch, log=lambda m: None)
 check("mailbox down: reported, nothing breaks", c3["mailboxes_read"] == 0)
+home2 = tempfile.mkdtemp()
+pd.DataFrame([{"sent_at": "2026-10-07T08:00:00", "email": e} for e in
+              ["u003emtfgalway@gmail.com", "euchariahannon@gmail.com"]]).to_csv(home2 + "/0_sent_log.csv", index=False)
+BOX2 = {"hello@frontage.agency": [
+    mail("MAILER-DAEMON <mailer-daemon@relay.net>", "Undelivered Mail Returned to Sender",
+         "<u003emtfgalway@gmail.com>: host said: 550 no such user", "j1"),
+    mail("E <euchariahannon@gmail.com>", "unsubscribe", "", "j2", headers="Auto-Submitted: auto-generated\n")]}
+replies.run(home2, pw, today=TODAY, fetch=lambda a, p, s: iter(BOX2.get(a, [])), log=lambda m: None)
+d2 = open(home2 + "/0_do_not_contact.csv").read().split()
+check("junk-spelled bounce: the clean address is blocked too", "mtfgalway@gmail.com" in d2)
+check("'unsubscribe' from an automatic sender still counts as opt-out", "euchariahannon@gmail.com" in d2)
 print("\nALL REPLY TESTS PASSED")
