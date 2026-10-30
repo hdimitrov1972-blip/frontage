@@ -8,7 +8,7 @@
   },
   "ready_leads_min": 150,
   "search_again_after_days": 90,
-  "followup_enabled": false,
+  "followup_enabled": true,
   "followup_window": {
     "timezone": "Europe/Dublin",
     "weekdays": [5, 6],
