@@ -112,6 +112,7 @@ os.environ["TEST_EMAIL"] = "me@example.com"
 
 import run_notebook  # noqa: E402
 import daily  # noqa: E402
+daily.replies.fetch_messages = lambda address, pw, since: iter(())     # empty mailboxes
 
 # 1. settings replacement and shell lines
 cells = run_notebook.apply_settings(['A = 1\nTOWN = "Ennis"   # town\nB = 2'], {"TOWN": '"Drogheda"'})
@@ -202,6 +203,13 @@ new_rows = log[log.place_id != "old1"]
 check("v2.3: every new send has its Message-ID", len(new_rows) == len(sent_lines()) > 0
       and new_rows.message_id.str.match(r"^<.+@frontage\.agency>$").all())
 check("v2.3: backup of the old log kept", os.path.exists(home + "/0_sent_log_backup_before_v23.csv"))
+
+# 9. Safety brake: with 0_PAUSE.txt on Drive nothing is sent
+home = fresh_drive(200)
+open(home + "/0_PAUSE.txt", "w").write("paused")
+os.remove(os.environ["FAKE_SENT_FILE"]) if os.path.exists(os.environ["FAKE_SENT_FILE"]) else None
+daily.run("live")
+check("paused: nothing sent", sent_lines() == [])
 
 shutil.rmtree(CONTENT, ignore_errors=True)
 print("\nALL RUNNER TESTS PASSED")

@@ -3,6 +3,7 @@ name: Frontage daily
 # live = the real day (search when needed, pipeline, sender to businesses)
 # test = sender only, one email per mailbox to TEST_EMAIL; nothing on Drive changes except the log
 # upgrade-sender = one-off: makes "Frontage Sender v2.3 LIVE" on Drive from v2.2 (tools/upgrade_sender.py)
+# replies = only the reply and bounce stopper (reads the mailboxes, updates do-not-contact)
 # check-mailboxes = one-off, read-only: can the runner read the 5 mailboxes (counts only)
 on:
   workflow_dispatch:
@@ -10,7 +11,7 @@ on:
       mode:
         description: "what to run"
         type: choice
-        options: [test, live, upgrade-sender, check-mailboxes]
+        options: [test, live, replies, upgrade-sender, check-mailboxes]
         default: test
   schedule:                     # UTC = Irish time in winter, Irish time minus 1 hour in summer
     - cron: "17 6 * * *"        # every day: search and pipeline when stock is low; sender on weekdays
@@ -86,7 +87,7 @@ jobs:
         run: python tools/check_mailboxes.py
 
       - name: Run the day
-        if: env.MODE == 'live' || env.MODE == 'test'
+        if: env.MODE == 'live' || env.MODE == 'test' || env.MODE == 'replies'
         env:
           SMTP_PASSWORD_1: ${{ secrets.SMTP_PASSWORD_1 }}
           SMTP_PASSWORD_2: ${{ secrets.SMTP_PASSWORD_2 }}
@@ -103,9 +104,9 @@ jobs:
         run: python runner/daily.py finalize
 
       - name: Save to Drive
-        if: always() && steps.download.outcome == 'success' && (env.MODE == 'live' || env.MODE == 'test')
+        if: always() && steps.download.outcome == 'success' && (env.MODE == 'live' || env.MODE == 'test' || env.MODE == 'replies')
         run: |
-          if [ "$MODE" = "live" ]; then
+          if [ "$MODE" = "live" ] || [ "$MODE" = "replies" ]; then
             rclone copy "$DRIVE_DIR" "gdrive:Frontage" --checksum --quiet
           else
             rclone copy "$DRIVE_DIR/runs" "gdrive:Frontage/runs" --checksum --quiet

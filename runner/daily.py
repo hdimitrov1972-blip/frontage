@@ -20,6 +20,8 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 
+import replies
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 CONTENT = os.environ.get("FRONTAGE_CONTENT", "/content")
@@ -172,6 +174,13 @@ def run(mode):
     today = now_utc().date()
     ok = True
     say(f"FRONTAGE DAILY RUN — {stamp} UTC — mode: {mode}", log)
+    # 0. Replies and bounces first, so today's sending already skips them
+    if mode in ("live", "replies"):
+        ok &= check_replies(log)
+        if mode == "replies":
+            say("RESULT: " + ("OK" if ok else "SOMETHING FAILED"), log, note=True)
+            return 0 if ok else 1
+
     ready = ready_leads()
     waiting = waiting_town_files()
     say(f"ready email leads: {ready}   town files waiting for the pipeline: {len(waiting)}", log)
@@ -209,6 +218,8 @@ def run(mode):
             say("[sender] TEST_EMAIL secret missing — test not run", log)
             return 1
         ok &= run_step("sender", log, {"TEST_SEND_TO": json.dumps([to])})
+    elif os.path.exists(os.path.join(DRIVE, "0_PAUSE.txt")):
+        say("[sender] PAUSED — 0_PAUSE.txt is on Drive (too many bounces); nothing sent", log, note=True)
     elif not inside:
         say(f"[sender] outside the sending window ({when}) — nothing sent", log)
     else:
@@ -222,6 +233,24 @@ def run(mode):
     return 0 if ok else 1
 
 
+def check_replies(log):
+    passwords = {f"{b}@{replies.DOMAIN}": os.environ.get(f"SMTP_PASSWORD_{i}", "")
+                 for i, b in enumerate(replies.BOXES, 1)}
+    try:
+        c = replies.run(DRIVE, passwords, log=lambda m: say(m, log))
+    except Exception as e:
+        say(f"[replies] FAILED ({type(e).__name__}) — sending goes on; checked again next run", log)
+        with open(log, "a", encoding="utf-8") as f:
+            import traceback
+            traceback.print_exc(file=f)
+        return False
+    say(f"[replies] mailboxes read: {c['mailboxes_read']}/5   new: {c['reply']} replies, {c['optout']} no-thanks, "
+        f"{c['bounce']} bounces, {c['auto']} auto-replies   added to do-not-contact: "
+        f"{c['added_to_do_not_contact']}" + ("   ⛔ SENDING PAUSED (bounces over 3%)" if c["paused"] else ""),
+        log, note=True)
+    return c["mailboxes_read"] == 5
+
+
 def finalize():
     """Runs even if the job was stopped: never upload a half-finished pipeline."""
     if os.path.exists(MARKER) and os.path.isdir(SNAP):
@@ -233,6 +262,6 @@ def finalize():
 if __name__ == "__main__":
     if len(sys.argv) >= 2 and sys.argv[1] == "finalize":
         sys.exit(finalize())
-    if len(sys.argv) == 4 and sys.argv[1] == "run" and sys.argv[2] == "--mode" and sys.argv[3] in ("live", "test"):
+    if len(sys.argv) == 4 and sys.argv[1] == "run" and sys.argv[2] == "--mode" and sys.argv[3] in ("live", "test", "replies"):
         sys.exit(run(sys.argv[3]))
     raise SystemExit(__doc__)
