@@ -6,7 +6,7 @@
     "pipeline": "Frontage Pipeline v1.2.ipynb",
     "sender": "Frontage Sender v2.2 LIVE.ipynb"
   },
-  "ready_leads_min": 90,
+  "ready_leads_min": 150,
   "search_again_after_days": 90,
   "send_window": {
     "timezone": "Europe/Dublin",

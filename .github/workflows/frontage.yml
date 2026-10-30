@@ -10,8 +10,10 @@ on:
         type: choice
         options: [test, live]
         default: test
-  # schedule:                  # switched on after the test run
-  #   - cron: "30 8 * * 1-5"    # back-up start, 08:30 UTC on weekdays; the exact start comes from the Hostinger timer
+  schedule:                     # UTC = Irish time in winter, Irish time minus 1 hour in summer
+    - cron: "17 6 * * *"        # every day: search and pipeline when stock is low; sender on weekdays
+    - cron: "47 9 * * 1-5"      # weekday back-up start (GitHub timers can run hours late)
+    - cron: "47 12 * * 1-5"     # second back-up; a later start finds today already sent and sends 0
 
 permissions:
   contents: read

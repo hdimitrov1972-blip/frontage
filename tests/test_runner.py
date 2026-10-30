@@ -62,7 +62,7 @@ def check(name, cond):
     assert cond, name
 
 
-def fresh_drive(n_leads=120):
+def fresh_drive(n_leads=200):
     shutil.rmtree(CONTENT, ignore_errors=True)
     home = os.path.join(CONTENT, "drive", "MyDrive", "Frontage")
     os.makedirs(home + "/latest")
@@ -125,7 +125,7 @@ except SystemExit:
     check("multi-line setting refused", True)
 
 # 2. live day with plenty of leads: no search, no pipeline, sender sends the warm-up amount
-home = fresh_drive(120)
+home = fresh_drive(200)
 daily.in_send_window = lambda: (True, "test")
 code = daily.run("live")
 sent = sent_lines()
@@ -142,7 +142,7 @@ daily.run("live")
 check("second run the same day sends nothing", sent_lines() == [])
 
 # 4. test mode: only to TEST_EMAIL, master not changed
-home = fresh_drive(120)
+home = fresh_drive(200)
 before = open(home + "/LEADS_MASTER.csv").read()
 os.remove(os.environ["FAKE_SENT_FILE"]) if os.path.exists(os.environ["FAKE_SENT_FILE"]) else None
 daily.run("test")
@@ -151,7 +151,7 @@ check("test: emails only to TEST_EMAIL", sent and {t for _, t in sent} == {"me@e
 check("test: LEADS_MASTER unchanged", open(home + "/LEADS_MASTER.csv").read() == before)
 
 # 5. outside the window: nothing sent
-home = fresh_drive(120)
+home = fresh_drive(200)
 os.remove(os.environ["FAKE_SENT_FILE"]) if os.path.exists(os.environ["FAKE_SENT_FILE"]) else None
 daily.in_send_window = lambda: (False, "Sat 10:00")
 daily.run("live")
