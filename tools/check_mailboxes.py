@@ -23,6 +23,6 @@ for i, name in enumerate(BOXES, 1):
         typ, d2 = m.search(None, "SINCE", since, "FROM", "mailer-daemon")
         out.append(f"bounces: {len(d2[0].split()) if d2 and d2[0] else 0}")
         m.logout()
-        print(f"{name}@: login OK — messages in the last 45 days — " + ", ".join(out))
+        print(f"::notice::{name}@: login OK — messages in the last 45 days — " + ", ".join(out))
     except Exception as e:
-        print(f"{name}@: FAILED ({type(e).__name__})")
+        print(f"::warning::{name}@: FAILED ({type(e).__name__})")

@@ -36,9 +36,9 @@ def now_utc():
     return dt.datetime.now(dt.timezone.utc)
 
 
-def say(msg, log=None):
-    """Public line: GitHub log (counts only) and the private log."""
-    print(msg, flush=True)
+def say(msg, log=None, note=False):
+    """Public line: GitHub log (counts only) and the private log. note=True also shows it on the run page."""
+    print(("::notice::" if note and os.environ.get("GITHUB_ACTIONS") else "") + msg, flush=True)
     if log:
         with open(log, "a", encoding="utf-8") as f:
             f.write(msg + "\n")
@@ -215,10 +215,10 @@ def run(mode):
         before, _ = sent_today()
         ok &= run_step("sender", log, {"TEST_SEND_TO": "[]"})
         after, per_box = sent_today()
-        say(f"[sender] sent now: {after - before}   today in total: {after}   per mailbox: {per_box}", log)
+        say(f"[sender] sent now: {after - before}   today in total: {after}   per mailbox: {per_box}", log, note=True)
 
-    say(f"ready email leads left: {ready_leads()}", log)
-    say("RESULT: " + ("OK" if ok else "SOMETHING FAILED — see the log in My Drive/Frontage/runs"), log)
+    say(f"ready email leads left: {ready_leads()}", log, note=True)
+    say("RESULT: " + ("OK" if ok else "SOMETHING FAILED — see the log in My Drive/Frontage/runs"), log, note=True)
     return 0 if ok else 1
 
 
