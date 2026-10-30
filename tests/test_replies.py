@@ -114,4 +114,9 @@ replies.run(home2, pw, today=TODAY, fetch=lambda a, p, s: iter(BOX2.get(a, [])),
 d2 = open(home2 + "/0_do_not_contact.csv").read().split()
 check("junk-spelled bounce: the clean address is blocked too", "mtfgalway@gmail.com" in d2)
 check("'unsubscribe' from an automatic sender still counts as opt-out", "euchariahannon@gmail.com" in d2)
+home3 = tempfile.mkdtemp()
+pd.DataFrame([{"sent_at": "2026-11-01T08:00:00", "email": "info@shop.ie"}]).to_csv(home3 + "/0_sent_log.csv", index=False)
+BOX3 = {"hello@frontage.agency": [mail("Shop <info@shop.ie>", "Re: Shop website", "STOP\n\n> Reply stop and I won't", "s1")]}
+replies.run(home3, pw, today=TODAY, fetch=lambda a, p, s: iter(BOX3.get(a, [])), log=lambda m: None)
+check("a one-word 'STOP' reply = opt-out", "info@shop.ie" in open(home3 + "/0_do_not_contact.csv").read())
 print("\nALL REPLY TESTS PASSED")

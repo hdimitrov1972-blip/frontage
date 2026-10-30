@@ -108,7 +108,9 @@ def classify(msg, sent_emails, sent_domains):
         matched = sent_domains[dom]
     else:
         return None, None
-    if OPT_OUT.search(subject) or OPT_OUT.search(_first_lines(text)):
+    first = _first_lines(text)
+    if (OPT_OUT.search(subject) or OPT_OUT.search(first)
+            or re.fullmatch(r"\W*(stop|remove|unsubscribe|no)\W*", first.split(" ")[0] if len(first.split()) <= 2 else "", re.I)):
         return "optout", matched              # a refusal counts even when a machine sent it
     auto = (str(msg.get("Auto-Submitted", "no")).lower() not in ("", "no")
             or msg.get("X-Autoreply") or msg.get("X-Autorespond")

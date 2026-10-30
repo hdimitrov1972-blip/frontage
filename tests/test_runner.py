@@ -127,7 +127,7 @@ except SystemExit:
 
 # 2. live day with plenty of leads: no search, no pipeline, sender sends the warm-up amount
 home = fresh_drive(200)
-daily.in_send_window = lambda: (True, "test")
+daily.in_send_window = lambda *a: (True, "test")
 code = daily.run("live")
 sent = sent_lines()
 log = pd.read_csv(home + "/0_sent_log.csv", dtype=str)
@@ -154,10 +154,10 @@ check("test: LEADS_MASTER unchanged", open(home + "/LEADS_MASTER.csv").read() ==
 # 5. outside the window: nothing sent
 home = fresh_drive(200)
 os.remove(os.environ["FAKE_SENT_FILE"]) if os.path.exists(os.environ["FAKE_SENT_FILE"]) else None
-daily.in_send_window = lambda: (False, "Sat 10:00")
+daily.in_send_window = lambda *a: (False, "Sat 10:00")
 daily.run("live")
 check("outside the window nothing is sent", sent_lines() == [])
-daily.in_send_window = lambda: (True, "test")
+daily.in_send_window = lambda *a: (True, "test")
 
 # 6. leads low: searches the NEXT town in the queue (not Ennis again), then the pipeline gets it
 home = fresh_drive(5)

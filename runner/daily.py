@@ -20,7 +20,9 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 
+import followup
 import replies
+import summary
 import suspects
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -115,8 +117,8 @@ def sent_today():
     return len(today), today.get("mailbox", pd.Series(dtype=str)).str.split("@").str[0].value_counts().to_dict()
 
 
-def in_send_window():
-    w = CONFIG["send_window"]
+def in_send_window(name="send_window"):
+    w = CONFIG[name]
     t = dt.datetime.now(ZoneInfo(w["timezone"]))
     hm = t.strftime("%H:%M")
     return t.weekday() in w["weekdays"] and w["start"] <= hm < w["end"], t.strftime("%a %H:%M Irish time")
@@ -175,6 +177,15 @@ def run(mode):
     today = now_utc().date()
     ok = True
     say(f"FRONTAGE DAILY RUN — {stamp} UTC — mode: {mode}", log)
+    passwords = {f"{b}@{replies.DOMAIN}": os.environ.get(f"SMTP_PASSWORD_{i}", "")
+                 for i, b in enumerate(replies.BOXES, 1)}
+    if mode == "followup-test":
+        to = os.environ.get("TEST_EMAIL", "").strip()
+        c = followup.run(DRIVE, passwords, test_to=to, log=lambda m: say(m, log))
+        say(f"[follow-up test] sent to you: {c['sent']}   failed: {c['failed']}   texts: "
+            f"{sorted(followup.load_texts(DRIVE))}   businesses waiting for a follow-up: {c['candidates']}", log, note=True)
+        return 0 if c["sent"] else 1
+
     # 0. Replies and bounces first, so today's sending already skips them
     if mode in ("live", "replies"):
         ok &= check_replies(log)
@@ -229,6 +240,19 @@ def run(mode):
         after, per_box = sent_today()
         say(f"[sender] sent now: {after - before}   today in total: {after}   per mailbox: {per_box}", log, note=True)
 
+    # 3b. Weekend follow-up, then the Sunday summary
+    if mode == "live":
+        inside_f, when_f = in_send_window("followup_window")
+        if inside_f:
+            c = followup.run(DRIVE, passwords, log=lambda m: say(m, log))
+            say(f"[follow-up] sent: {c['sent']}   failed: {c['failed']}   by text: {c['per_variant']}   "
+                f"still waiting: {max(c['candidates'] - c['sent'], 0)}", log, note=True)
+        t = dt.datetime.now(ZoneInfo(CONFIG["send_window"]["timezone"]))
+        if t.weekday() == CONFIG["summary_weekday"] and t.strftime("%H:%M") >= CONFIG["summary_after"]:
+            summary.run(DRIVE, t.date(), ready_leads(), passwords.get("hello@frontage.agency", ""),
+                        os.environ.get("TEST_EMAIL", ""), log=lambda m: say(m, log))
+            say("[summary] weekly summary sent to you and saved in runs/", log, note=True)
+
     # 4. Suspect addresses: clear cases decided, answers applied (after the sender, as agreed)
     if mode == "live":
         try:
@@ -273,6 +297,6 @@ def finalize():
 if __name__ == "__main__":
     if len(sys.argv) >= 2 and sys.argv[1] == "finalize":
         sys.exit(finalize())
-    if len(sys.argv) == 4 and sys.argv[1] == "run" and sys.argv[2] == "--mode" and sys.argv[3] in ("live", "test", "replies"):
+    if len(sys.argv) == 4 and sys.argv[1] == "run" and sys.argv[2] == "--mode" and sys.argv[3] in ("live", "test", "replies", "followup-test"):
         sys.exit(run(sys.argv[3]))
     raise SystemExit(__doc__)
