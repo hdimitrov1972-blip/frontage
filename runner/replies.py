@@ -115,12 +115,19 @@ def fetch_messages(address, password, since):
     m.login(address, password)
     try:
         typ, folders = m.list()
-        names = [f.decode().split(' "/" ')[-1].strip('"') for f in folders or []]
+        names = []
+        for f in folders or []:            # e.g. (\HasNoChildren) "." "INBOX.Spam"
+            hit = re.match(r'\((?P<flags>[^)]*)\) (?:"[^"]*"|NIL) (?P<name>.+)$', f.decode(errors="replace"))
+            if hit:
+                names.append(hit.group("name").strip().strip('"'))
         wanted = ["INBOX"] + [n for n in names if re.search(r"spam|junk", n, re.I)]
         for folder in wanted:
-            if m.select(f'"{folder}"', readonly=True)[0] != "OK":
-                continue
-            typ, data = m.search(None, "SINCE", since.strftime("%d-%b-%Y"))
+            try:
+                if m.select(f'"{folder}"', readonly=True)[0] != "OK":
+                    continue
+                typ, data = m.search(None, "SINCE", since.strftime("%d-%b-%Y"))
+            except imaplib.IMAP4.error:
+                continue                   # a folder that can't be opened is skipped, not fatal
             for num in (data[0].split() if data and data[0] else []):
                 typ, parts = m.fetch(num, "(BODY.PEEK[])")
                 raw = next((p[1] for p in parts if isinstance(p, tuple)), None)
@@ -173,7 +180,7 @@ def run(home, passwords, today=None, fetch=None, log=print):
                                  "matched_email": matched, "subject": str(msg.get("Subject", ""))[:150]})
             counts["mailboxes_read"] += 1
         except Exception as e:
-            log(f"[replies] {address.split('@')[0]}@ could not be read ({type(e).__name__})")
+            log(f"[replies] {address.split('@')[0]}@ could not be read ({type(e).__name__}: {str(e)[:150]})")
 
     if new_rows:
         pd.DataFrame(new_rows)[REPLY_COLS].to_csv(rpath, mode="a", header=not os.path.exists(rpath), index=False)
