@@ -21,6 +21,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 
 import replies
+import suspects
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -227,6 +228,16 @@ def run(mode):
         ok &= run_step("sender", log, {"TEST_SEND_TO": "[]"})
         after, per_box = sent_today()
         say(f"[sender] sent now: {after - before}   today in total: {after}   per mailbox: {per_box}", log, note=True)
+
+    # 4. Suspect addresses: clear cases decided, answers applied (after the sender, as agreed)
+    if mode == "live":
+        try:
+            c = suspects.run(DRIVE, log=lambda m: say(m, log))
+            say(f"[suspects] held back: {c['suspects']}   approved: {c['yes']}   to phone list: {c['no']}   "
+                f"left for the weekly check: {c['unclear']}", log, note=True)
+        except Exception as e:
+            ok = False
+            say(f"[suspects] FAILED ({type(e).__name__}) — nothing changed by it", log)
 
     say(f"ready email leads left: {ready_leads()}", log, note=True)
     say("RESULT: " + ("OK" if ok else "SOMETHING FAILED — see the log in My Drive/Frontage/runs"), log, note=True)
