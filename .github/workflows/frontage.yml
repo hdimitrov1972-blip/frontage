@@ -10,8 +10,8 @@ on:
         type: choice
         options: [test, live]
         default: test
-  schedule:
-    - cron: "30 8 * * 1-5"      # back-up start, 08:30 UTC on weekdays; the exact start comes from the Hostinger timer
+  # schedule:                  # switched on after the test run
+  #   - cron: "30 8 * * 1-5"    # back-up start, 08:30 UTC on weekdays; the exact start comes from the Hostinger timer
 
 permissions:
   contents: read
