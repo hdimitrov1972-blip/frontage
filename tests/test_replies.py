@@ -119,4 +119,47 @@ pd.DataFrame([{"sent_at": "2026-11-01T08:00:00", "email": "info@shop.ie"}]).to_c
 BOX3 = {"hello@frontage.agency": [mail("Shop <info@shop.ie>", "Re: Shop website", "STOP\n\n> Reply stop and I won't", "s1")]}
 replies.run(home3, pw, today=TODAY, fetch=lambda a, p, s: iter(BOX3.get(a, [])), log=lambda m: None)
 check("a one-word 'STOP' reply = opt-out", "info@shop.ie" in open(home3 + "/0_do_not_contact.csv").read())
+
+# "No. Thanks" (with a full stop) is a no, and an older row filed as "reply" is fixed on the next run
+home4 = tempfile.mkdtemp()
+pd.DataFrame([{"sent_at": "2026-10-31T15:36:34", "email": "saborbraziil@gmail.com"}]).to_csv(
+    home4 + "/0_sent_log.csv", index=False)
+pd.DataFrame([{"seen_at": "2026-11-04", "received": "2026-11-04", "mailbox": "hello@frontage.agency",
+               "message_id": "<old>", "kind": "reply", "from": "saborbraziil@gmail.com",
+               "matched_email": "saborbraziil@gmail.com", "subject": "Re: Sabor Braziil website",
+               "first_lines": "No. Thanks Leonardo Lemos CEO Sabor Braziil"}]).to_csv(home4 + "/0_replies.csv", index=False)
+BOX4 = {"hello@frontage.agency": [mail("X <info@nothanks.ie>", "Re: X website", "No. Thanks\n\n> Hi X team", "nt1")]}
+pd.DataFrame([{"sent_at": "2026-10-31T15:36:34", "email": e} for e in
+              ["saborbraziil@gmail.com", "info@nothanks.ie"]]).to_csv(home4 + "/0_sent_log.csv", index=False)
+c4 = replies.run(home4, pw, today=TODAY, fetch=lambda a, p, s: iter(BOX4.get(a, [])), log=lambda m: None)
+d4 = open(home4 + "/0_do_not_contact.csv").read().split()
+check("'No. Thanks' = opt-out", c4["optout"] == 1 and "info@nothanks.ie" in d4)
+check("older 'No. Thanks' filed as reply is put on do-not-contact", "saborbraziil@gmail.com" in d4)
+check("interested reply still never blocked (re-check)", "info@cafeblue.ie" not in open(home + "/0_do_not_contact.csv").read())
+
+# Brake: after a pause is lifted it starts fresh; follow-ups count as sends
+home5 = tempfile.mkdtemp()
+D = dt.date(2026, 11, 6)
+sent = [{"sent_at": "2026-10-30T09:00:00", "email": f"a{i}@a.ie"} for i in range(30)] + \
+       [{"sent_at": "2026-11-02T09:00:00", "email": f"b{i}@b.ie"} for i in range(27)]
+pd.DataFrame(sent).to_csv(home5 + "/0_sent_log.csv", index=False)
+pd.DataFrame([{"seen_at": r, "received": r, "kind": "bounce", "matched_email": f"z{i}@z.ie", "message_id": f"<{i}>"}
+              for i, r in enumerate(["2026-10-30", "2026-11-02", "2026-11-02"])]).to_csv(home5 + "/0_replies.csv", index=False)
+open(home5 + "/0_PAUSE.txt", "w").write("Sending paused on 2026-11-02: 4 bounces from 117 emails\n")
+check("pause file present: still paused, pause day remembered",
+      replies.check_bounce_brake(home5, D) and "2026-11-02" in open(home5 + "/0_pause_history.csv").read())
+os.remove(home5 + "/0_PAUSE.txt")
+check("pause lifted: old bounces (3 of 57) not counted again -> sending allowed",
+      not replies.check_bounce_brake(home5, D) and not os.path.exists(home5 + "/0_PAUSE.txt"))
+pd.DataFrame([{"sent_at": "2026-11-09T09:00:00", "email": f"c{i}@c.ie"} for i in range(20)]).to_csv(
+    home5 + "/0_sent_log.csv", mode="a", header=False, index=False)
+pd.DataFrame([{"seen_at": "2026-11-09", "received": "2026-11-09", "kind": "bounce", "matched_email": "c1@c.ie",
+               "message_id": "<n1>"}]).to_csv(home5 + "/0_replies.csv", mode="a", header=False, index=False)
+check("after resume: 1 new bounce of 20 -> no pause (under 3 bounces)", not replies.check_bounce_brake(home5, dt.date(2026, 11, 9)))
+pd.DataFrame([{"seen_at": "2026-11-10", "received": "2026-11-10", "kind": "bounce", "matched_email": f"c{i}@c.ie",
+               "message_id": f"<n{i}>"} for i in (2, 3)]).to_csv(home5 + "/0_replies.csv", mode="a", header=False, index=False)
+pd.DataFrame([{"sent_at": "2026-11-10T09:00:00", "email": f"d{i}@d.ie"} for i in range(30)]).to_csv(
+    home5 + "/0_followup_log.csv", index=False)
+check("after resume: 3 new bounces of 50 (20 first + 30 follow-ups) = 6% -> paused again",
+      replies.check_bounce_brake(home5, dt.date(2026, 11, 10)) and "from 50 emails" in open(home5 + "/0_PAUSE.txt").read())
 print("\nALL REPLY TESTS PASSED")

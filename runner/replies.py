@@ -24,7 +24,7 @@ FREE_MAIL = {"gmail.com", "googlemail.com", "yahoo.com", "yahoo.ie", "yahoo.co.u
              "hotmail.co.uk", "outlook.com", "outlook.ie", "live.com", "live.ie", "icloud.com",
              "me.com", "aol.com", "eircom.net", "gmx.com", "protonmail.com", "msn.com"}
 OPT_OUT = re.compile(r"\b(unsubscribe|remove (me|us)|take (me|us) off|stop (emailing|contacting|sending)"
-                     r"|do not (contact|email)|don'?t (contact|email)|not interested|no,? thanks?|no thank you"
+                     r"|do not (contact|email)|don'?t (contact|email)|not interested|no[,.!]?\s*thanks?|no thank you"
                      r"|(permanently )?closed( down)?|ceased trading|no longer (trading|in business))\b", re.I)
 AUTO_SUBJECT = re.compile(r"(auto(matic)?[ -]?(reply|response)|out of (the )?office|away from|"
                           r"thank(s| you) for (your (email|message|enquiry)|contacting)|we (have )?received)", re.I)
@@ -213,7 +213,9 @@ def run(home, passwords, today=None, fetch=None, log=print):
     every = pd.concat([_read(rpath), pd.DataFrame(new_rows)], ignore_index=True) if new_rows else _read(rpath)
     stop = set()
     for _, r in every.iterrows():
-        if r.get("kind") in ("bounce", "optout") and "@" in str(r.get("matched_email", "")):
+        refusal = r.get("kind") in ("bounce", "optout") or (               # also older replies the
+            r.get("kind") == "reply" and OPT_OUT.search(str(r.get("first_lines", ""))))  # first version missed
+        if refusal and "@" in str(r.get("matched_email", "")):
             stop |= {str(r["matched_email"]).lower(), clean_address(r["matched_email"])}
     add = sorted({a for a in stop if "@" in a} - have)
     if add:
@@ -225,15 +227,47 @@ def run(home, passwords, today=None, fetch=None, log=print):
     return counts
 
 
+def _pause_days(home):
+    """Every day the brake stopped sending (0_pause_history.csv, plus the open 0_PAUSE.txt)."""
+    days = set(_read(os.path.join(home, "0_pause_history.csv")).get("paused_on", pd.Series(dtype=str)))
+    try:
+        m = re.search(r"paused on (\d{4}-\d{2}-\d{2})", open(os.path.join(home, "0_PAUSE.txt"), encoding="utf-8").read())
+        if m:
+            days.add(m.group(1))
+    except OSError:
+        pass
+    return sorted(d for d in days if d)
+
+
+def _remember_pause(home, day):
+    path = os.path.join(home, "0_pause_history.csv")
+    have = set(_read(path).get("paused_on", pd.Series(dtype=str)))
+    if day not in have:
+        new = not os.path.exists(path)
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(("paused_on\n" if new else "") + day + "\n")
+
+
 def check_bounce_brake(home, today):
-    """Pause all sending when bounces over the last 7 days pass 3% (and at least 3 bounces)."""
+    """Pause all sending when bounces pass 3% (and at least 3 bounces) over the last 7 days.
+    First emails and follow-ups both count. After a pause is lifted the brake starts fresh: sends and
+    bounces up to the pause day are not counted again (those addresses are already on do-not-contact)."""
     pause = os.path.join(home, "0_PAUSE.txt")
     if os.path.exists(pause):
+        for d in _pause_days(home):
+            _remember_pause(home, d)
         return True
     start = (today - dt.timedelta(days=BOUNCE_WINDOW_DAYS)).isoformat()
-    sent = _read(os.path.join(home, "0_sent_log.csv"))
+    paused = _pause_days(home)
+    if paused:
+        after_pause = (dt.date.fromisoformat(paused[-1]) + dt.timedelta(days=1)).isoformat()
+        start = max(start, after_pause)
+    n_sent = 0
+    for name in ("0_sent_log.csv", "0_followup_log.csv"):
+        log = _read(os.path.join(home, name))
+        if len(log) and "sent_at" in log:
+            n_sent += int((log["sent_at"].str[:10] >= start).sum())
     rep = _read(os.path.join(home, "0_replies.csv"))
-    n_sent = int((sent.get("sent_at", pd.Series(dtype=str)).str[:10] >= start).sum()) if len(sent) else 0
     n_bounce = int(((rep.get("kind", pd.Series(dtype=str)) == "bounce")
                     & (rep.get("received", pd.Series(dtype=str)) >= start)).sum()) if len(rep) else 0
     if n_sent and n_bounce >= BOUNCE_MIN and n_bounce / n_sent > BOUNCE_LIMIT:
@@ -241,5 +275,6 @@ def check_bounce_brake(home, today):
             f.write(f"Sending paused on {today.isoformat()}: {n_bounce} bounces from {n_sent} emails in "
                     f"the last {BOUNCE_WINDOW_DAYS} days ({n_bounce / n_sent:.1%}, limit {BOUNCE_LIMIT:.0%}).\n"
                     f"Check the bounced addresses in 0_replies.csv, then delete this file to send again.\n")
+        _remember_pause(home, today.isoformat())
         return True
     return False

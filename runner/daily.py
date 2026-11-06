@@ -21,6 +21,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 
 import fixreply
+import domaincheck
 import followup
 import replies
 import summary
@@ -246,6 +247,19 @@ def run(mode):
             say("[pipeline] Drive put back as before the pipeline; it runs again on the next day", log)
     elif mode == "live":
         say("[pipeline] no town waiting", log)
+
+    # 2b. Dead-domain check: addresses whose domain cannot receive mail go on do-not-contact
+    if mode == "live":
+        try:
+            c = domaincheck.run(DRIVE, log=lambda m: say(m, log))
+            if c["skipped"]:
+                say(f"[domain check] skipped — {c['skipped']}", log, note=True)
+            else:
+                say(f"[domain check] domains looked up: {c['checked']}   dead: {c['dead_domains']}   "
+                    f"added to do-not-contact: {c['added_to_do_not_contact']}   no answer (kept): {c['unknown']}",
+                    log, note=True)
+        except Exception as e:
+            say(f"[domain check] FAILED ({type(e).__name__}) — sending goes on", log)
 
     # 3. Sender
     inside, when = in_send_window()
