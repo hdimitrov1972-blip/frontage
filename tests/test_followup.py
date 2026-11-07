@@ -102,4 +102,39 @@ check("Sunday summary emailed to me with the week's numbers",
       SENT[0][1] == "me@example.com" and "Follow-ups sent:" in body and "123" in body and "info@biz34.ie" in body)
 check("summary copy saved on Drive, sent once", os.path.exists(home + "/runs/weekly_summary_2026-11-15.txt")
       and summary.run(home, TODAY + dt.timedelta(days=1), 1, "x", "me", smtp=FakeSMTP) and len(SENT) == 1)
+
+# Hostinger-like server: a connection only takes ONE email, the second on it is refused
+import smtplib  # noqa: E402
+class OneShotSMTP(FakeSMTP):
+    def __init__(self, *a, **k):
+        super().__init__(); self.used = 0
+    def send_message(self, msg, to_addrs=None):
+        self.used += 1
+        if self.used > 1:
+            raise smtplib.SMTPSenderRefused(451, b"try again later", "hello@frontage.agency")
+        SENT.append((self.user, to_addrs[0], msg))
+home6 = setup()
+c6 = followup.run(home6, pw, today=TODAY, smtp=OneShotSMTP, sleep=lambda s: None, log=lambda m: None)
+check("one-email-per-connection server: nothing fails", c6["failed"] == 0 and c6["sent"] > 0)
+
+FLAKY = {"n": 0}
+class FlakySMTP(FakeSMTP):
+    def send_message(self, msg, to_addrs=None):
+        FLAKY["n"] += 1
+        if FLAKY["n"] % 2 == 1:
+            raise smtplib.SMTPSenderRefused(451, b"temporary", "x")
+        SENT.append((self.user, to_addrs[0], msg))
+home7 = setup()
+msgs = []
+c7 = followup.run(home7, pw, today=TODAY, smtp=FlakySMTP, sleep=lambda s: None, log=msgs.append)
+check("a refused email is retried once and goes out", c7["failed"] == 0 and c7["sent"] == c6["sent"])
+class DeadSMTP(FakeSMTP):
+    def send_message(self, msg, to_addrs=None):
+        raise smtplib.SMTPSenderRefused(550, b"sending limit reached", "x")
+home8 = setup()
+msgs = []
+c8 = followup.run(home8, pw, today=TODAY, smtp=DeadSMTP, sleep=lambda s: None, log=msgs.append)
+check("server keeps refusing: counted as failed, the reason is in the log, nothing logged as sent",
+      c8["sent"] == 0 and c8["failed"] > 0 and any("550 sending limit reached" in m for m in msgs)
+      and not os.path.exists(home8 + "/0_followup_log.csv"))
 print("\nALL FOLLOW-UP TESTS PASSED")

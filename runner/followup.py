@@ -103,6 +103,20 @@ def build(row, body, mailbox):
     return msg
 
 
+def send_one(smtp, box, password, msg, to):
+    """Connect, log in, send one email, disconnect. A connection kept open through the 1-3 minute
+    pauses between emails goes stale, and Hostinger then refuses the next email (SMTPSenderRefused)."""
+    server = smtp(SMTP_HOST, SMTP_PORT, timeout=30)
+    try:
+        server.login(box, password)
+        server.send_message(msg, to_addrs=[to])
+    finally:
+        try:
+            server.quit()
+        except Exception:
+            pass
+
+
 def run(home, passwords, today=None, test_to=None, log=print, sleep=time.sleep, smtp=smtplib.SMTP_SSL):
     """passwords: {"hello@frontage.agency": "..."}. test_to: send one per mailbox ONLY to this address."""
     today = today or dt.date.today()
@@ -141,39 +155,38 @@ def run(home, passwords, today=None, test_to=None, log=print, sleep=time.sleep, 
         plan.append((r, box))
     logpath = os.path.join(home, "0_followup_log.csv")
     done_before = len(_read(logpath))
-    servers = {}
-    try:
-        for i, (r, box) in enumerate(plan):
-            variant = variants[(done_before + i) % len(variants)]
-            msg = build(r, texts[variant], box)
-            to = test_to or r["email"]
-            if test_to:
-                del msg["To"]
-                msg["To"] = test_to
+    for i, (r, box) in enumerate(plan):
+        variant = variants[(done_before + i) % len(variants)]
+        msg = build(r, texts[variant], box)
+        to = test_to or r["email"]
+        if test_to:
+            del msg["To"]
+            msg["To"] = test_to
+        error = None
+        for attempt in (1, 2):                  # a fresh connection for every email, one retry
             try:
-                if box not in servers:
-                    servers[box] = smtp(SMTP_HOST, SMTP_PORT, timeout=30)
-                    servers[box].login(box, passwords[box])
-                servers[box].send_message(msg, to_addrs=[to])
+                send_one(smtp, box, passwords[box], msg, to)
+                error = None
+                break
             except Exception as e:
-                counts["failed"] += 1
-                log(f"[follow-up] {box.split('@')[0]}@ failed ({type(e).__name__})")
-                servers.pop(box, None)
-                continue
-            counts["sent"] += 1
-            counts["per_variant"][variant] = counts["per_variant"].get(variant, 0) + 1
-            if not test_to:
-                pd.DataFrame([{"sent_at": f"{today.isoformat()}T{dt.datetime.now().strftime('%H:%M:%S')}",
-                               "place_id": r.get("place_id", ""), "email": r["email"], "name": r.get("name", ""),
-                               "mailbox": box, "first_sent_at": r["sent_at"], "variant": variant,
-                               "message_id": msg["Message-ID"]}])[LOG_COLS].to_csv(
-                    logpath, mode="a", header=not os.path.exists(logpath), index=False)
-            if i < len(plan) - 1 and not test_to:
-                sleep(random.randint(MIN_DELAY, MAX_DELAY))
-    finally:
-        for s in servers.values():
-            try:
-                s.quit()
-            except Exception:
-                pass
+                error = e
+                if attempt == 1:
+                    sleep(20)
+        if error is not None:
+            counts["failed"] += 1
+            code = getattr(error, "smtp_code", "")
+            text = getattr(error, "smtp_error", b"")
+            text = text.decode("utf-8", "replace") if isinstance(text, bytes) else str(text)
+            log(f"[follow-up] {box.split('@')[0]}@ failed ({type(error).__name__} {code} {text[:120]})".rstrip())
+            continue
+        counts["sent"] += 1
+        counts["per_variant"][variant] = counts["per_variant"].get(variant, 0) + 1
+        if not test_to:
+            pd.DataFrame([{"sent_at": f"{today.isoformat()}T{dt.datetime.now().strftime('%H:%M:%S')}",
+                           "place_id": r.get("place_id", ""), "email": r["email"], "name": r.get("name", ""),
+                           "mailbox": box, "first_sent_at": r["sent_at"], "variant": variant,
+                           "message_id": msg["Message-ID"]}])[LOG_COLS].to_csv(
+                logpath, mode="a", header=not os.path.exists(logpath), index=False)
+        if i < len(plan) - 1 and not test_to:
+            sleep(random.randint(MIN_DELAY, MAX_DELAY))
     return counts
