@@ -15,6 +15,14 @@ def _read(path):
         return pd.DataFrame()
 
 
+def _list_rows(path):
+    try:
+        d = pd.read_excel(path, sheet_name=0, dtype=str).fillna("")
+        return int((d.iloc[:, 0].str.strip() == "").sum())
+    except Exception:
+        return 0
+
+
 def week_numbers(home, today, ready_leads):
     start = (today - dt.timedelta(days=6)).isoformat()
     sent = _read(os.path.join(home, "0_sent_log.csv"))
@@ -40,6 +48,9 @@ def week_numbers(home, today, ready_leads):
         "weekly_check": int(((rv.get("Approve", pd.Series(dtype=str)) == "")
                              & rv.get("Hint", pd.Series(dtype=str)).str.startswith("weekly check")).sum()) if len(rv) else 0,
         "paused": os.path.exists(os.path.join(home, "0_PAUSE.txt")),
+        "forms_sent": int((_read(os.path.join(home, "0_contact_forms_sent.csv")).get("done_on", pd.Series(dtype=str))
+                           >= start).sum()),
+        "forms_waiting": _list_rows(os.path.join(home, "Contact_forms_to_send.xlsx")),
         "reply_from": sorted(set(real_replies.get("matched_email", pd.Series(dtype=str)))) if len(real_replies) else [],
     }
     if len(fups) and "variant" in fups.columns:
@@ -63,6 +74,9 @@ def text(n, today):
         "",
         f"Ready email leads in stock: {n['ready_leads']}",
         f"Suspect addresses waiting for the weekly check: {n['weekly_check']}",
+        "",
+        f"Contact forms you sent this week: {n.get('forms_sent', 0)}",
+        f"Waiting in Contact_forms_to_send.xlsx: {n.get('forms_waiting', 0)}",
     ]
     if n["reply_from"]:
         lines += ["", "Replies to read (in your Gmail):"] + [f"  - {a}" for a in n["reply_from"]]

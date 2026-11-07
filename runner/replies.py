@@ -163,6 +163,10 @@ def run(home, passwords, today=None, fetch=None, log=print):
         d = e.split("@")[-1]
         if d not in FREE_MAIL:
             sent_domains.setdefault(d, e)
+    forms = _read(os.path.join(home, "0_contact_forms_sent.csv"))          # contacted through their contact form:
+    for d in forms.get("domain", pd.Series(dtype=str)).str.strip().str.lower():  # their replies match by domain
+        if d and d not in FREE_MAIL:
+            sent_domains.setdefault(d, "@" + d)
 
     rpath = os.path.join(home, "0_replies.csv")
     old = _read(rpath)

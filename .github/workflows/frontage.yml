@@ -116,6 +116,11 @@ jobs:
         if: always() && steps.download.outcome == 'success' && (env.MODE == 'live' || env.MODE == 'test' || env.MODE == 'replies' || env.MODE == 'followup-test' || env.MODE == 'fixreply-test')
         run: |
           if [ "$MODE" = "live" ] || [ "$MODE" = "replies" ]; then
+            # keep any 'Done' ticks made on the phone while this run was busy
+            if [ -f "$DRIVE_DIR/Contact_forms_to_send.xlsx" ] && \
+               rclone copyto "gdrive:Frontage/Contact_forms_to_send.xlsx" /content/forms_latest.xlsx --quiet 2>/dev/null; then
+              python runner/contactforms.py merge /content/forms_latest.xlsx "$DRIVE_DIR/Contact_forms_to_send.xlsx" || true
+            fi
             rclone copy "$DRIVE_DIR" "gdrive:Frontage" --checksum --quiet
           else
             rclone copy "$DRIVE_DIR/runs" "gdrive:Frontage/runs" --checksum --quiet

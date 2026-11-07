@@ -194,6 +194,10 @@ def run(home, password, owner_email, today=None, log=print, imap_cls=imaplib.IMA
     for _, r in todo.iterrows():
         counts["yes_replies"] += 1
         row = sent[sent["email"].str.lower() == r["matched_email"]].head(1) if len(sent) else sent
+        if not len(row) and str(r["matched_email"]).startswith("@"):    # contacted through their contact form
+            forms = _read(os.path.join(home, "0_contact_forms_sent.csv"))
+            row = forms[forms.get("domain", pd.Series(dtype=str)).str.lower() == r["matched_email"][1:]].head(1) \
+                if len(forms) else forms
         place_id = row["place_id"].iloc[0] if len(row) else ""
         name = (row["name"].iloc[0] if len(row) else "") or "there"
         audits = load_audit(home, place_id) if place_id else None

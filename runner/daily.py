@@ -21,6 +21,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 
 import fixreply
+import contactforms
 import domaincheck
 import followup
 import replies
@@ -260,6 +261,17 @@ def run(mode):
                     log, note=True)
         except Exception as e:
             say(f"[domain check] FAILED ({type(e).__name__}) — sending goes on", log)
+
+    # 2c. Contact-form list for Anzhel's phone (nothing is sent by the machine)
+    if mode == "live" and CONFIG.get("contact_forms_enabled", True):
+        try:
+            c = contactforms.run(DRIVE, os.environ.get("PAGESPEED_KEY", ""), today=today, log=lambda m: say(m, log))
+            say(f"[contact forms] websites checked: {c['checked']}   new in your list: {c['listed_new']}   "
+                f"no problem found: {c['no_problem']}   no form: {c['no_form']}   site down: {c['site_down']}   "
+                f"marked done by you: {c['moved_to_sent']}   waiting in your list: {c['in_list']}   "
+                f"left to check: {c['left_to_check']}", log, note=True)
+        except Exception as e:
+            say(f"[contact forms] FAILED ({type(e).__name__}) — the rest of the day goes on", log)
 
     # 3. Sender
     inside, when = in_send_window()
