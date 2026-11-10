@@ -23,6 +23,7 @@ import pandas as pd
 import fixreply
 import contactforms
 import domaincheck
+import emailtext
 import followup
 import replies
 import summary
@@ -272,6 +273,16 @@ def run(mode):
                 f"left to check: {c['left_to_check']}", log, note=True)
         except Exception as e:
             say(f"[contact forms] FAILED ({type(e).__name__}) — the rest of the day goes on", log)
+
+    # 2d. Approved leads that are ready but have no email text yet get it (same text as everyone else)
+    if mode in ("live", "test"):
+        try:
+            n = emailtext.fill_missing(DRIVE, os.path.join(NB_DIR, CONFIG["notebooks"]["pipeline"]),
+                                       log=lambda m: say(m, log))
+            if n:
+                say(f"[email text] written for {n} approved lead(s) that had none", log, note=True)
+        except Exception as e:
+            say(f"[email text] FAILED ({type(e).__name__}) — those leads wait", log)
 
     # 3. Sender
     inside, when = in_send_window()
