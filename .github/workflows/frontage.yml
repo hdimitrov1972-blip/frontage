@@ -13,7 +13,7 @@ on:
       mode:
         description: "what to run"
         type: choice
-        options: [test, live, replies, followup-test, fixreply-test, upgrade-sender, check-mailboxes, analyze-audits]
+        options: [test, live, replies, followup-test, fixreply-test, upgrade-sender, upgrade-sender-24, check-mailboxes, analyze-audits]
         default: test
       test_to:
         description: "test only: extra addresses, comma separated (e.g. a mail-tester.com address)"
@@ -81,6 +81,17 @@ jobs:
           python tools/upgrade_sender.py /content/v22.ipynb "/content/Frontage Sender v2.3 LIVE.ipynb"
           rclone copyto "/content/Frontage Sender v2.3 LIVE.ipynb" "gdrive:Colab Notebooks/Frontage Sender v2.3 LIVE.ipynb"
           echo "saved: Colab Notebooks/Frontage Sender v2.3 LIVE.ipynb (v2.2 kept as it was)"
+
+      - name: Make Sender v2.4 on Drive (split test, one-off)
+        if: env.MODE == 'upgrade-sender-24'
+        run: |
+          if rclone lsf "gdrive:Colab Notebooks/" | grep -qx "Frontage Sender v2.4 LIVE.ipynb"; then
+            echo "Sender v2.4 is already on Drive; nothing done."; exit 0
+          fi
+          rclone copyto "gdrive:Colab Notebooks/Frontage Sender v2.3 LIVE.ipynb" /content/v23.ipynb
+          python tools/upgrade_sender_v24.py /content/v23.ipynb "/content/Frontage Sender v2.4 LIVE.ipynb"
+          rclone copyto "/content/Frontage Sender v2.4 LIVE.ipynb" "gdrive:Colab Notebooks/Frontage Sender v2.4 LIVE.ipynb"
+          echo "saved: Colab Notebooks/Frontage Sender v2.4 LIVE.ipynb (v2.3 kept as it was)"
 
       - name: Count website problems in all speed tests (one-off)
         if: env.MODE == 'analyze-audits'

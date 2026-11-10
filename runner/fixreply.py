@@ -136,6 +136,26 @@ def compose(name, audits, guide):
     return "\n".join(out)
 
 
+def report_for_no_pdf_email(home, place_id):
+    """(pdf bytes, file name) when this business got version B of the first email (no PDF attached,
+    "reply yes and I'll send it"), so the yes-reply carries the report. Otherwise None."""
+    import zipfile
+    m = _read(os.path.join(home, "LEADS_MASTER.csv"))
+    if m.empty or "Template" not in m.columns or not place_id:
+        return None
+    row = m[m["place_id"] == place_id].head(1)
+    if not len(row) or row["Template"].iloc[0] != "outbox_v1_nopdf":
+        return None
+    file = row["Report_File"].iloc[0] if "Report_File" in row else ""
+    name = (row["Attachment_Name"].iloc[0] if "Attachment_Name" in row else "") or file
+    zpath = os.path.join(home, "latest", "4A_reports.zip")
+    if not file or not os.path.exists(zpath):
+        return None
+    with zipfile.ZipFile(zpath) as z:
+        hit = [n for n in z.namelist() if os.path.basename(n) == file]
+        return (z.read(hit[0]), name) if hit else None
+
+
 def is_yes(text):
     return bool(YES.search((text or "").strip()))
 
@@ -214,7 +234,13 @@ def run(home, password, owner_email, today=None, log=print, imap_cls=imaplib.IMA
                 msg["Message-ID"] = make_msgid(domain="frontage.agency")
                 msg["In-Reply-To"] = r["message_id"]
                 msg["References"] = r["message_id"]
+                pdf = report_for_no_pdf_email(home, place_id)
+                if pdf:                                  # they were promised the report: it goes with the reply
+                    text = text.replace(f"Hi {name} team,\n", f"Hi {name} team,\n\nAs promised, your report is "
+                                        f"attached.\n", 1)
                 msg.set_content(text)
+                if pdf:
+                    msg.add_attachment(pdf[0], maintype="application", subtype="pdf", filename=pdf[1])
                 ok = save_draft(msg, password, imap_cls)
                 notify(f"{name} said yes ({r['from']}).\n\nThe reply below is ready in hello@ → Drafts: open it, "
                        f"check it, press Send. Or copy it from here.\n\n" + "-" * 40 + "\n\n" + text,

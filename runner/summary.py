@@ -23,6 +23,27 @@ def _list_rows(path):
         return 0
 
 
+def split_test(home, sent, rep):
+    """Since the split test began: emails and replies from people per version (A = with PDF, B = no PDF)."""
+    m = _read(os.path.join(home, "LEADS_MASTER.csv"))
+    if m.empty or "Template" not in m.columns or not len(sent):
+        return {}
+    ver = dict(zip(m["place_id"], m["Template"].map({"outbox_v1": "A", "outbox_v1_nopdf": "B"})))
+    if "B" not in set(ver.values()):
+        return {}
+    s = sent.assign(v=sent["place_id"].map(ver))
+    start = str(s.loc[s["v"] == "B", "sent_at"].min())[:10]      # the day the split test began
+    s = s[(s["sent_at"] >= start) & s["v"].isin(["A", "B"])]
+    by_email = dict(zip(s["email"].str.lower(), s["v"]))
+    people = rep[rep.get("kind", pd.Series(dtype=str)).isin(["reply", "optout"])] if len(rep) else rep
+    out = {}
+    for v in ("A", "B"):
+        r = people[people["matched_email"].str.lower().map(by_email) == v] if len(people) else people
+        out[v] = {"sent": int((s["v"] == v).sum()), "replies": int((r["kind"] == "reply").sum()) if len(r) else 0,
+                  "no_thanks": int((r["kind"] == "optout").sum()) if len(r) else 0}
+    return out
+
+
 def week_numbers(home, today, ready_leads):
     start = (today - dt.timedelta(days=6)).isoformat()
     sent = _read(os.path.join(home, "0_sent_log.csv"))
@@ -38,6 +59,7 @@ def week_numbers(home, today, ready_leads):
 
     real_replies = wk[wk["kind"] == "reply"] if len(wk) else wk
     n = {
+        "split": split_test(home, sent, rep),
         "first_emails": len(first),
         "follow_ups": len(fups),
         "bounces": kind("bounce"),
@@ -68,6 +90,9 @@ def text(n, today):
         f"First emails sent:      {n['first_emails']}",
         f"Follow-ups sent:        {n['follow_ups']}" + (f"   (by text: {n['follow_ups_by_text']})" if n.get("follow_ups_by_text") else ""),
         f"Replies from people:    {n['replies']}",
+    ] + ([f"Split test since it began — A (with PDF): {n['split']['A']['sent']} sent, {n['split']['A']['replies']} replies, "
+          f"{n['split']['A']['no_thanks']} no thanks;  B (no PDF): {n['split']['B']['sent']} sent, "
+          f"{n['split']['B']['replies']} replies, {n['split']['B']['no_thanks']} no thanks"] if n.get("split") else []) + [
         f"'No thanks' / remove:   {n['no_thanks']}   (on do-not-contact, never emailed again)",
         f"Bounces:                {n['bounces']}   ({n['bounce_rate']} of first emails)",
         f"Automatic replies:      {n['auto_replies']}",

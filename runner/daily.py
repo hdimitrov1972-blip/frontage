@@ -293,7 +293,11 @@ def run(mode):
             say("[sender] TEST_EMAIL secret missing — test not run", log)
             return 1
         say(f"[sender] TEST: sending the real first email (with PDF) to {len(tos)} test address(es)", log)
-        ok &= run_step("sender", log, {"TEST_SEND_TO": json.dumps(tos)})
+        settings = {"TEST_SEND_TO": json.dumps(tos)}
+        nb = os.path.join(NB_DIR, CONFIG["notebooks"]["sender"])
+        if os.path.exists(nb) and "TEST_VARIANTS = " in open(nb, encoding="utf-8").read():
+            settings["TEST_VARIANTS"] = json.dumps(["A", "B"])      # split test: send both versions
+        ok &= run_step("sender", log, settings)
     elif os.path.exists(os.path.join(DRIVE, "0_PAUSE.txt")):
         say("[sender] PAUSED — 0_PAUSE.txt is on Drive (too many bounces); nothing sent", log, note=True)
     elif not inside:
