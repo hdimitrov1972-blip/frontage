@@ -304,7 +304,11 @@ def run(mode):
         say(f"[sender] outside the sending window ({when}) — nothing sent", log)
     else:
         before, _ = sent_today()
-        ok &= run_step("sender", log, {"TEST_SEND_TO": "[]"})
+        settings = {"TEST_SEND_TO": "[]"}
+        nb = os.path.join(NB_DIR, CONFIG["notebooks"]["sender"])
+        if "split_b_share" in CONFIG and os.path.exists(nb) and "SPLIT_B_SHARE = " in open(nb, encoding="utf-8").read():
+            settings["SPLIT_B_SHARE"] = str(float(CONFIG["split_b_share"]))   # 1.0 = everyone gets version B
+        ok &= run_step("sender", log, settings)
         after, per_box = sent_today()
         say(f"[sender] sent now: {after - before}   today in total: {after}   per mailbox: {per_box}", log, note=True)
 
