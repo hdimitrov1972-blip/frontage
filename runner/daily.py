@@ -276,11 +276,13 @@ def run(mode):
     # 3. Sender
     inside, when = in_send_window()
     if mode == "test":
-        to = os.environ.get("TEST_EMAIL", "").strip()
-        if not to:
+        tos = [a.strip() for a in [os.environ.get("TEST_EMAIL", "")] + os.environ.get("TEST_TO", "").split(",")
+               if "@" in a]
+        if not tos:
             say("[sender] TEST_EMAIL secret missing — test not run", log)
             return 1
-        ok &= run_step("sender", log, {"TEST_SEND_TO": json.dumps([to])})
+        say(f"[sender] TEST: sending the real first email (with PDF) to {len(tos)} test address(es)", log)
+        ok &= run_step("sender", log, {"TEST_SEND_TO": json.dumps(tos)})
     elif os.path.exists(os.path.join(DRIVE, "0_PAUSE.txt")):
         say("[sender] PAUSED — 0_PAUSE.txt is on Drive (too many bounces); nothing sent", log, note=True)
     elif not inside:
