@@ -22,7 +22,8 @@ BOXES = ["hello", "performance", "proposals", "audit", "contact"]      # SMTP_PA
 LOOK_BACK_DAYS = 60
 FREE_MAIL = {"gmail.com", "googlemail.com", "yahoo.com", "yahoo.ie", "yahoo.co.uk", "hotmail.com",
              "hotmail.co.uk", "outlook.com", "outlook.ie", "live.com", "live.ie", "icloud.com",
-             "me.com", "aol.com", "eircom.net", "gmx.com", "protonmail.com", "msn.com"}
+             "me.com", "aol.com", "eircom.net", "gmx.com", "protonmail.com", "msn.com", "hotmail.ie",
+             "live.co.uk", "rocketmail.com", "ymail.com", "mail.com", "proton.me", "icloud.ie"}
 OPT_OUT = re.compile(r"\b(unsubscribe|remove (me|us)|take (me|us) off|stop (emailing|contacting|sending)"
                      r"|do not (contact|email)|don'?t (contact|email)|not interested|no[,.!]?\s*thanks?|no thank you"
                      r"|permanently closed|closed (down|for good|permanently)|(we'?ve|we have|we are|we're) (now )?closed(?=\s*([.!,]|$|now\b|down\b|for good\b|permanently\b))"

@@ -24,6 +24,7 @@ import fixreply
 import contactforms
 import domaincheck
 import emailtext
+import freemail
 import followup
 import replies
 import summary
@@ -262,6 +263,13 @@ def run(mode):
                     log, note=True)
         except Exception as e:
             say(f"[domain check] FAILED ({type(e).__name__}) — sending goes on", log)
+
+    # 2c2. Personal addresses (gmail, hotmail...) are not emailed: they move to the phone / contact-form list
+    if mode in ("live", "test") and not CONFIG.get("email_free_mail", False):
+        try:
+            freemail.move_to_phone(DRIVE, log=lambda m: say(m, log))
+        except Exception as e:
+            say(f"[free mail] FAILED ({type(e).__name__})", log)
 
     # 2c. Contact-form list for Anzhel's phone (nothing is sent by the machine)
     if mode == "live" and CONFIG.get("contact_forms_enabled", True):

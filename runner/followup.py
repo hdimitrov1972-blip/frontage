@@ -78,6 +78,8 @@ def candidates(home, today):
     done = set(_read(os.path.join(home, "0_followup_log.csv")).get("email", pd.Series(dtype=str)).str.lower())
     dom = "@" + sent["email"].str.split("@").str[-1]
     ok = (~sent["email"].isin(dnc) & ~dom.isin(dnc) & ~sent["email"].isin(answered) & ~sent["email"].isin(done))
+    ok &= ~sent["email"].str.split("@").str[-1].isin(FREE_MAIL)   # personal addresses (sole traders): no more
+                                                                  # marketing email (Anzhel's decision, 11 Nov)
     # a reply from another address at the same business also counts as answered
     answered_domains = {"@" + a.split("@")[-1] for a in answered if a.split("@")[-1] not in FREE_MAIL}
     ok &= ~dom.isin(answered_domains)
