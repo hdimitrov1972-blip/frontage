@@ -89,7 +89,7 @@ def _first_lines(text, n=6):
     return " ".join(lines)
 
 
-def classify(msg, sent_emails, sent_domains):
+def classify(msg, sent_emails, sent_domains, thread=None):
     """Returns (kind, matched_email) or (None, None) for mail that has nothing to do with our sends.
     kind: bounce | optout | reply | auto"""
     sender = email.utils.parseaddr(str(msg.get("From", "")))[1].lower()
@@ -110,6 +110,10 @@ def classify(msg, sent_emails, sent_domains):
         matched = sender
     elif dom not in FREE_MAIL and dom in sent_domains:
         matched = sent_domains[dom]
+    elif thread and any(t in thread for t in re.findall(r"<[^>]+>", f"{msg.get('In-Reply-To', '')} {msg.get('References', '')}")):
+        # an answer to one of our emails, sent from another address (e.g. the owner's own Gmail)
+        matched = next(thread[t] for t in re.findall(r"<[^>]+>", f"{msg.get('In-Reply-To', '')} "
+                                                                  f"{msg.get('References', '')}") if t in thread)
     else:
         return None, None
     first = _first_lines(text)
@@ -172,6 +176,14 @@ def run(home, passwords, today=None, fetch=None, log=print):
         if d and d not in FREE_MAIL:
             sent_domains.setdefault(d, "@" + d)
 
+    thread = {}                                   # our Message-IDs -> the address we wrote to
+    for name in ("0_sent_log.csv", "0_followup_log.csv"):
+        log_ = _read(os.path.join(home, name))
+        if len(log_) and "message_id" in log_.columns and "email" in log_.columns:
+            for mid_, e in zip(log_["message_id"].str.strip(), log_["email"].str.strip().str.lower()):
+                if mid_.startswith("<") and e:
+                    thread[mid_] = e
+
     rpath = os.path.join(home, "0_replies.csv")
     old = _read(rpath)
     if len(old) and any(c not in old.columns for c in REPLY_COLS):     # older file: add the new columns once
@@ -190,7 +202,7 @@ def run(home, passwords, today=None, fetch=None, log=print):
                 mid = str(msg.get("Message-ID", "")).strip() or f"{address}|{msg.get('Date')}|{msg.get('From')}"
                 if mid in seen:
                     continue
-                kind, matched = classify(msg, sent_emails, sent_domains)
+                kind, matched = classify(msg, sent_emails, sent_domains, thread)
                 if not kind:
                     continue
                 seen.add(mid)

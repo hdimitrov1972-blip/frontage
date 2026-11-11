@@ -21,6 +21,8 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 
 import fixreply
+import alerts
+import archive
 import contactforms
 import domaincheck
 import emailtext
@@ -238,6 +240,13 @@ def run(mode):
     elif mode == "live":
         say("[search] not needed today", log)
 
+    # 1b. Keep every emailed business and its PDF for good (before the pipeline can drop them)
+    if mode == "live":
+        try:
+            archive.run(DRIVE, log=lambda m: say(m, log))
+        except Exception as e:
+            say(f"[archive] FAILED ({type(e).__name__})", log)
+
     # 2. Pipeline, when a town file waits. On failure Drive goes back to how it was.
     if mode == "live" and waiting:
         say(f"[pipeline] processing {waiting[0][:-4]}", log)
@@ -335,6 +344,13 @@ def run(mode):
                         os.environ.get("TEST_EMAIL", ""), log=lambda m: say(m, log))
             say("[summary] weekly summary sent to you and saved in runs/", log, note=True)
 
+    # 3c. Today's new sends go into the permanent archive too
+    if mode == "live":
+        try:
+            archive.run(DRIVE, log=lambda m: say(m, log))
+        except Exception as e:
+            say(f"[archive] FAILED ({type(e).__name__})", log)
+
     # 4. Suspect addresses: clear cases decided, answers applied (after the sender, as agreed)
     if mode == "live":
         try:
@@ -346,6 +362,15 @@ def run(mode):
             say(f"[suspects] FAILED ({type(e).__name__}) — nothing changed by it", log)
 
     say(f"ready email leads left: {ready_leads()}", log, note=True)
+    # 5. Alert to Anzhel's Gmail: a failed run, or no first emails on a weekday (once a day per kind)
+    if mode == "live":
+        try:
+            w = CONFIG["send_window"]
+            alerts.check(DRIVE, ok, dt.datetime.now(ZoneInfo(w["timezone"])), w,
+                         passwords.get("hello@frontage.agency", ""), os.environ.get("TEST_EMAIL", ""),
+                         notify=fixreply.notify, log=lambda m: say(m, log))
+        except Exception as e:
+            say(f"[alert] could not send ({type(e).__name__})", log)
     say("RESULT: " + ("OK" if ok else "SOMETHING FAILED — see the log in My Drive/Frontage/runs"), log, note=True)
     return 0 if ok else 1
 

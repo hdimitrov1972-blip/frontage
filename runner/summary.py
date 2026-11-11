@@ -26,9 +26,14 @@ def _list_rows(path):
 def split_test(home, sent, rep):
     """Since the split test began: emails and replies from people per version (A = with PDF, B = no PDF)."""
     m = _read(os.path.join(home, "LEADS_MASTER.csv"))
-    if m.empty or "Template" not in m.columns or not len(sent):
+    if (m.empty or "Template" not in m.columns) and not os.path.exists(os.path.join(home, "0_sent_leads.csv")) \
+            or not len(sent):
         return {}
-    ver = dict(zip(m["place_id"], m["Template"].map({"outbox_v1": "A", "outbox_v1_nopdf": "B"})))
+    ar = _read(os.path.join(home, "0_sent_leads.csv"))
+    tmpl = dict(zip(ar.get("place_id", pd.Series(dtype=str)), ar.get("Template", pd.Series(dtype=str))))
+    if len(m) and "Template" in m.columns:
+        tmpl.update(dict(zip(m["place_id"], m["Template"])))
+    ver = {p: {"outbox_v1": "A", "outbox_v1_nopdf": "B"}.get(t) for p, t in tmpl.items()}
     if "B" not in set(ver.values()):
         return {}
     s = sent.assign(v=sent["place_id"].map(ver))

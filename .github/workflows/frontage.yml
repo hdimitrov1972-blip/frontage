@@ -69,6 +69,7 @@ jobs:
             name=$(echo "$nb" | base64 -d)
             rclone copyto "gdrive:Colab Notebooks/$name" "/content/notebooks/$name" --quiet || echo "not on Drive yet: $name"
           done
+          rclone lsjson "gdrive:Frontage" --files-only --max-depth 1 > /content/drive_before.json || echo "[]" > /content/drive_before.json
           echo "downloaded: $(find "$DRIVE_DIR" -type f | wc -l) files, $(ls /content/notebooks | wc -l) notebooks"
 
       - name: Make Sender v2.3 on Drive (one-off)
@@ -132,10 +133,10 @@ jobs:
         if: always() && steps.download.outcome == 'success' && (env.MODE == 'live' || env.MODE == 'test' || env.MODE == 'replies' || env.MODE == 'followup-test' || env.MODE == 'fixreply-test')
         run: |
           if [ "$MODE" = "live" ] || [ "$MODE" = "replies" ]; then
-            # keep any 'Done' ticks made on the phone while this run was busy
-            if [ -f "$DRIVE_DIR/Contact_forms_to_send.xlsx" ] && \
-               rclone copyto "gdrive:Frontage/Contact_forms_to_send.xlsx" /content/forms_latest.xlsx --quiet 2>/dev/null; then
-              python runner/contactforms.py merge /content/forms_latest.xlsx "$DRIVE_DIR/Contact_forms_to_send.xlsx" || true
+            # keep Anzhel's phone edits made on Drive while this run was busy (do-not-contact, weekly-check
+            # answers, contact-form ticks, a deleted 0_PAUSE.txt)
+            if rclone lsjson "gdrive:Frontage" --files-only --max-depth 1 > /content/drive_after.json; then
+              python runner/protect.py /content/drive_before.json /content/drive_after.json "$DRIVE_DIR" || true
             fi
             rclone copy "$DRIVE_DIR" "gdrive:Frontage" --checksum --quiet
           else

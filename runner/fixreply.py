@@ -140,20 +140,24 @@ def report_for_no_pdf_email(home, place_id):
     """(pdf bytes, file name) when this business got version B of the first email (no PDF attached,
     "reply yes and I'll send it"), so the yes-reply carries the report. Otherwise None."""
     import zipfile
+    import archive
+    if not place_id:
+        return None
     m = _read(os.path.join(home, "LEADS_MASTER.csv"))
-    if m.empty or "Template" not in m.columns or not place_id:
+    row = m[m["place_id"] == place_id].head(1) if len(m) and "Template" in m.columns else m.iloc[0:0]
+    rec = row.iloc[0].to_dict() if len(row) else archive.lookup(home, place_id)   # left LEADS_MASTER: archive
+    if rec.get("Template") != "outbox_v1_nopdf":
         return None
-    row = m[m["place_id"] == place_id].head(1)
-    if not len(row) or row["Template"].iloc[0] != "outbox_v1_nopdf":
-        return None
-    file = row["Report_File"].iloc[0] if "Report_File" in row else ""
-    name = (row["Attachment_Name"].iloc[0] if "Attachment_Name" in row else "") or file
+    file = rec.get("Report_File", "")
+    name = rec.get("Attachment_Name", "") or file
     zpath = os.path.join(home, "latest", "4A_reports.zip")
-    if not file or not os.path.exists(zpath):
-        return None
-    with zipfile.ZipFile(zpath) as z:
-        hit = [n for n in z.namelist() if os.path.basename(n) == file]
-        return (z.read(hit[0]), name) if hit else None
+    if file and os.path.exists(zpath):
+        with zipfile.ZipFile(zpath) as z:
+            hit = [n for n in z.namelist() if os.path.basename(n) == file]
+            if hit:
+                return z.read(hit[0]), name
+    data = archive.pdf(home, file)                     # kept for good in My Drive/Frontage/sent_reports
+    return (data, name) if data else None
 
 
 def is_yes(text):
