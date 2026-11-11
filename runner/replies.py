@@ -25,7 +25,10 @@ FREE_MAIL = {"gmail.com", "googlemail.com", "yahoo.com", "yahoo.ie", "yahoo.co.u
              "me.com", "aol.com", "eircom.net", "gmx.com", "protonmail.com", "msn.com"}
 OPT_OUT = re.compile(r"\b(unsubscribe|remove (me|us)|take (me|us) off|stop (emailing|contacting|sending)"
                      r"|do not (contact|email)|don'?t (contact|email)|not interested|no[,.!]?\s*thanks?|no thank you"
-                     r"|(permanently )?closed( down)?|ceased trading|no longer (trading|in business))\b", re.I)
+                     r"|permanently closed|closed (down|for good|permanently)|(we'?ve|we have|we are|we're) (now )?closed(?=\s*([.!,]|$|now\b|down\b|for good\b|permanently\b))"
+                     r"|ceased trading|no longer (trading|in business)"
+                     r"|(take|remove|delete) (my|our|this) (e-?mail|address|details)( address)? (off|from)"
+                     r"|(off|from) (your|the) (mailing |e-?mail )?list)\b", re.I)
 AUTO_SUBJECT = re.compile(r"(auto(matic)?[ -]?(reply|response)|out of (the )?office|away from|"
                           r"thank(s| you) for (your (email|message|enquiry)|contacting)|we (have )?received)", re.I)
 EMAIL_RE = re.compile(r"[A-Za-z0-9._%+'-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")

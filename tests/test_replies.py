@@ -162,4 +162,12 @@ pd.DataFrame([{"sent_at": "2026-11-10T09:00:00", "email": f"d{i}@d.ie"} for i in
     home5 + "/0_followup_log.csv", index=False)
 check("after resume: 3 new bounces of 50 (20 first + 30 follow-ups) = 6% -> paused again",
       replies.check_bounce_brake(home5, dt.date(2026, 11, 10)) and "from 50 emails" in open(home5 + "/0_PAUSE.txt").read())
+
+# Reviewer's cases (11 Nov): a yes that mentions opening days is not an opt-out; "off your list" is not a yes
+import fixreply  # noqa: E402
+check("'Yes please, we are closed Mondays' is not an opt-out", not replies.OPT_OUT.search("Yes please, we are closed Mondays but call me")
+      and fixreply.is_yes("Yes please, we are closed Mondays but call me"))
+check("'Please take my email off your list' is an opt-out, not a yes",
+      replies.OPT_OUT.search("Please take my email off your list") and not fixreply.is_yes("Please take my email off your list"))
+check("'We have closed down' is still an opt-out", replies.OPT_OUT.search("We have closed down"))
 print("\nALL REPLY TESTS PASSED")

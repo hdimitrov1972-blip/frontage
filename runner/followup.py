@@ -20,7 +20,7 @@ from email.utils import formataddr, formatdate, make_msgid
 import pandas as pd
 
 SMTP_HOST, SMTP_PORT = "smtp.hostinger.com", 465
-FROM_NAME = "Frontage Agency"
+FROM_NAME = "Anzhel at Frontage"      # same plain sender as the first email (version B, 10 Nov)
 REPLY_TO = "hello@frontage.agency"
 BOXES = ["hello", "performance", "proposals", "audit", "contact"]       # SMTP_PASSWORD_1..5
 WAIT_DAYS = 14
@@ -91,7 +91,6 @@ def build(row, body, mailbox):
     msg["From"] = formataddr((FROM_NAME, mailbox))
     msg["To"] = row["email"]
     msg["Reply-To"] = REPLY_TO
-    msg["List-Unsubscribe"] = f"<mailto:{REPLY_TO}?subject=unsubscribe>"
     msg["Date"] = formatdate(localtime=True)
     msg["Message-ID"] = make_msgid(domain=mailbox.split("@")[-1])
     first_id = str(row.get("message_id", "")).strip()

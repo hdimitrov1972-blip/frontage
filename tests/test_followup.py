@@ -70,7 +70,8 @@ msg = next(m for _, to, m in SENT if to == "info@biz44.ie")
 check("subject is Re: first subject, in the same conversation",
       msg["Subject"] == "Re: Biz 44 website on a phone" and msg["In-Reply-To"] == "<m44@frontage.agency>")
 check("no PDF attached, name filled in", not list(msg.iter_attachments()) and "Hi Biz 44 team" in msg.get_content())
-check("unsubscribe header and replies to hello@", "unsubscribe" in msg["List-Unsubscribe"] and msg["Reply-To"] == "hello@frontage.agency")
+check("plain personal sender like the first email (no bulk header), replies to hello@",
+      msg["List-Unsubscribe"] is None and "Anzhel at Frontage" in msg["From"] and msg["Reply-To"] == "hello@frontage.agency")
 check("texts A and B take turns", set(c["per_variant"]) == {"A", "B"} and abs(c["per_variant"]["A"] - c["per_variant"]["B"]) <= 1)
 log = pd.read_csv(home + "/0_followup_log.csv", dtype=str)
 check("every follow-up logged with its text", len(log) == 30 and set(log["variant"]) == {"A", "B"})

@@ -157,7 +157,9 @@ def report_for_no_pdf_email(home, place_id):
 
 
 def is_yes(text):
-    return bool(YES.search((text or "").strip()))
+    from replies import OPT_OUT                   # "Please take my email off your list" is not a yes
+    t = (text or "").strip()
+    return bool(YES.search(t)) and not OPT_OUT.search(t)
 
 
 def drafts_folder(imap):
