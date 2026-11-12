@@ -412,7 +412,8 @@ def quiet_hour(log, ok):
         text = open(log, encoding="utf-8").read()
     except OSError:
         return
-    if ok and "new: 0 replies, 0 no-thanks, 0 bounces, 0 auto-replies" in text and "[fix reply]" not in text:
+    if ok and "new: 0 replies, 0 no-thanks, 0 bounces, 0 auto-replies" in text and "[fix reply]" not in text \
+            and "removed" not in text:
         os.remove(log)
 
 
