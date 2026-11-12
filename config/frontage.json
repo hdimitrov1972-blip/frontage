@@ -33,7 +33,7 @@
     "end": "17:00"
   },
   "split_b_share": 1.0,
-  "short_share": 0.0,
-  "buttons": false,
+  "short_share": 0.5,
+  "buttons": true,
   "auto_send_button_yes": true
 }
