@@ -17,6 +17,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 import zipfile
 
 import pandas as pd
@@ -45,17 +46,40 @@ def drive_ids():
     return {f["Path"]: f["ID"] for f in json.loads(out)}
 
 
+def _get(url, tok, params, timeout=300):
+    """GET with patience: Google answers 403/429 when asked too fast."""
+    for wait in (0, 5, 20, 60):
+        if wait:
+            time.sleep(wait)
+        r = requests.get(url, headers={"Authorization": f"Bearer {tok}"}, params=params, timeout=timeout)
+        limited = r.status_code == 429 or (r.status_code == 403 and "ateLimit" in r.text)
+        if not limited:
+            return r
+    return r
+
+
 def revisions(fid, tok):
-    r = requests.get(f"{API}/{fid}/revisions", headers={"Authorization": f"Bearer {tok}"},
-                     params={"fields": "revisions(id,modifiedTime,size)", "pageSize": 1000}, timeout=60)
-    r.raise_for_status()
-    return sorted(r.json().get("revisions", []), key=lambda x: x["modifiedTime"])
+    out, page = [], None
+    while True:
+        params = {"fields": "nextPageToken,revisions(id,modifiedTime,size)", "pageSize": 200}
+        if page:
+            params["pageToken"] = page
+        r = _get(f"{API}/{fid}/revisions", tok, params, timeout=60)
+        if r.status_code != 200:
+            print(f"[recover]   could not list versions: HTTP {r.status_code} {r.text[:160]!r}")
+            break
+        d = r.json()
+        out += d.get("revisions", [])
+        page = d.get("nextPageToken")
+        if not page:
+            break
+    return sorted(out, key=lambda x: x["modifiedTime"], reverse=True)          # newest first
 
 
 def download(fid, rid, tok):
-    r = requests.get(f"{API}/{fid}/revisions/{rid}", headers={"Authorization": f"Bearer {tok}"},
-                     params={"alt": "media"}, timeout=300)
-    r.raise_for_status()
+    r = _get(f"{API}/{fid}/revisions/{rid}", tok, {"alt": "media"})
+    if r.status_code != 200:
+        raise IOError(f"HTTP {r.status_code} {r.text[:120]!r}")
     return r.content
 
 
@@ -111,7 +135,7 @@ def main(home, work):
     os.makedirs(work, exist_ok=True)
     tok = token()
     ids = drive_ids()
-    info, pdfs = {}, {}
+    info, pdfs, older = {}, {}, []
     # PDFs and rows the pipeline set aside between towns
     subprocess.call(["rclone", "copy", "gdrive:Frontage/carry", os.path.join(work, "carry"), "--quiet",
                      "--transfers", "16"])
@@ -127,11 +151,16 @@ def main(home, work):
     for path, fid in sorted(ids.items()):
         revs = revisions(fid, tok)
         print(f"[recover] {path}: {len(revs)} older versions on Drive")
+        misses, read = 0, 0
         for rv in revs:
+            if rv["modifiedTime"] < "2026-10-01" or misses >= 8:       # older content is gone from Drive
+                break
             try:
                 data = download(fid, rv["id"], tok)
+                misses, read = 0, read + 1
             except Exception as e:
-                print(f"[recover]   {rv['modifiedTime']}: not readable ({type(e).__name__})")
+                misses += 1
+                print(f"[recover]   {rv['modifiedTime']}: not readable ({str(e)[:150]})")
                 continue
             if path.endswith(".zip"):
                 try:
@@ -143,9 +172,12 @@ def main(home, work):
                     pass
             else:
                 try:
-                    learn(info, pd.read_csv(io.BytesIO(data), dtype=str, keep_default_na=False))
+                    older.append(pd.read_csv(io.BytesIO(data), dtype=str, keep_default_na=False))
                 except Exception:
                     pass
+        print(f"[recover]   versions read: {read}")
+    for frame in reversed(older):                    # oldest first, so the newest value wins
+        learn(info, frame)
     print(f"[recover] businesses with details found: {len(info)}   PDFs found in total: {len(pdfs)}")
     fill(home, info, pdfs)
 
