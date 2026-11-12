@@ -20,7 +20,8 @@ def _num(v):
 
 
 def short_name(name):
-    return re.split(r"\s+[-|–(]", str(name).strip())[0].strip() or "there"
+    from names import short_name as _short
+    return _short(name) or "there"
 
 
 def problem(row, this_year):

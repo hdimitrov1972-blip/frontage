@@ -28,20 +28,50 @@ on:
     - cron: "17 6 * * *"        # every day: search and pipeline when stock is low; sender on weekdays
     - cron: "47 9 * * *"        # back-up start, and the weekend follow-up (GitHub timers can run hours late)
     - cron: "47 12 * * *"       # second back-up; a later start finds today's sending done and sends 0
+    - cron: "23 7-21 * * *"     # every hour 07:23-21:23: replies only, so a YES button is answered within ~1 hour
+                                # (skipped while another Frontage run is busy: that run reads the replies itself)
 
 permissions:
   contents: read
 
-concurrency:
-  group: frontage
-  cancel-in-progress: false
-
 jobs:
+  # The hourly reply check must never wait in line behind (or push out) a daily run: GitHub keeps only one
+  # waiting run per group and cancels the older one. So it first looks whether any other Frontage run is
+  # busy or waiting, and if so it simply does nothing this hour.
+  gate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      go: ${{ steps.check.outputs.go }}
+    steps:
+      - id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HOURLY: ${{ github.event_name == 'schedule' && github.event.schedule == '23 7-21 * * *' }}
+        run: |
+          if [ "$HOURLY" != "true" ]; then echo "go=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          busy=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/frontage.yml/runs?per_page=30" \
+            --jq "[.workflow_runs[] | select(.id != $GITHUB_RUN_ID and (.status == \"in_progress\" or .status == \"queued\" or .status == \"waiting\" or .status == \"pending\" or .status == \"requested\"))] | length" || echo "unknown")
+          if [ "$busy" = "0" ]; then
+            echo "go=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "go=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::another Frontage run is busy ($busy) — hourly reply check skipped; that run reads the replies"
+          fi
+
   day:
+    needs: gate
+    if: needs.gate.outputs.go == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 240
+    concurrency:
+      group: frontage
+      cancel-in-progress: false
     env:
-      MODE: ${{ github.event_name == 'schedule' && 'live' || inputs.mode }}
+      MODE: ${{ github.event_name == 'schedule' && (github.event.schedule == '23 7-21 * * *' && 'replies' || 'live') || inputs.mode }}
       DRIVE_DIR: /content/drive/MyDrive/Frontage
     steps:
       - uses: actions/checkout@v4

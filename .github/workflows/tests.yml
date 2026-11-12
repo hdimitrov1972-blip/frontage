@@ -20,6 +20,6 @@ jobs:
       - run: pip install -q -r requirements.txt
       - name: Run the tests
         run: |
-          for t in replies followup contactforms emailtext freemail suspects domaincheck safety buttons; do
+          for t in replies followup contactforms emailtext freemail suspects domaincheck safety buttons reliability; do
             echo "== $t"; python tests/test_$t.py | tail -1
           done

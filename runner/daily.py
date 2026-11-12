@@ -28,6 +28,7 @@ import domaincheck
 import emailtext
 import freemail
 import followup
+import names
 import replies
 import shorttext
 import summary
@@ -224,6 +225,7 @@ def run(mode):
             say(f"[fix reply] FAILED ({type(e).__name__})", log)
         if mode == "replies":
             say("RESULT: " + ("OK" if ok else "SOMETHING FAILED"), log, note=True)
+            quiet_hour(log, ok)
             return 0 if ok else 1
 
     ready = ready_leads()
@@ -312,6 +314,15 @@ def run(mode):
         except Exception as e:
             say(f"[short text] FAILED ({type(e).__name__}) — those leads get the long email", log)
 
+    # 2f. Short, natural business names in the waiting emails ("The Gateway Hotel • Dundalk" -> "The Gateway Hotel")
+    if mode in ("live", "test"):
+        try:
+            n = names.polish(DRIVE, log=lambda m: say(m, log))
+            if n:
+                say(f"[names] shortened the business name in {n} waiting email(s)", log, note=True)
+        except Exception as e:
+            say(f"[names] FAILED ({type(e).__name__}) — the emails keep the full name", log)
+
     # 3. Sender
     inside, when = in_send_window()
     if mode == "test":
@@ -392,6 +403,17 @@ def run(mode):
             say(f"[alert] could not send ({type(e).__name__})", log)
     say("RESULT: " + ("OK" if ok else "SOMETHING FAILED — see the log in My Drive/Frontage/runs"), log, note=True)
     return 0 if ok else 1
+
+
+def quiet_hour(log, ok):
+    """An hourly reply check that found nothing leaves no log file behind (15 checks a day would bury the
+    real logs in My Drive/Frontage/runs). Anything new, or any failure, keeps the log."""
+    try:
+        text = open(log, encoding="utf-8").read()
+    except OSError:
+        return
+    if ok and "new: 0 replies, 0 no-thanks, 0 bounces, 0 auto-replies" in text and "[fix reply]" not in text:
+        os.remove(log)
 
 
 def check_replies(log):

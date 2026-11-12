@@ -20,6 +20,8 @@ from email.utils import formataddr, formatdate, make_msgid
 
 import pandas as pd
 
+from names import short_name
+
 HELLO = "hello@frontage.agency"
 FROM_NAME = "Frontage Agency"
 YES = re.compile(r"^\W*(yes|yeah|yep|yup|sure|please( do| send)?|ok(ay)?|go (ahead|for it)|sounds (good|great)|"
@@ -33,6 +35,13 @@ def _read(path):
         return pd.read_csv(path, dtype=str).fillna("")
     except Exception:
         return pd.DataFrame()
+
+
+def _remember(answered, answered_to, place_id, sender):
+    if place_id:
+        answered.add(place_id)
+    else:
+        answered_to.add(str(sender).lower())
 
 
 def safe_id(place_id):
@@ -242,16 +251,27 @@ def run(home, password, owner_email, today=None, log=print, imap_cls=imaplib.IMA
     done = set(_read(lpath).get("reply_message_id", pd.Series(dtype=str)))
     sent = _read(os.path.join(home, "0_sent_log.csv"))
     button = rep["subject"].astype(str).apply(lambda x: bool(BUTTON_YES.match(x)))
-    todo = rep[(rep["kind"] == "reply") & (rep["first_lines"].apply(is_yes) | button) & ~rep["message_id"].isin(done)]
+    owners = {a.strip().lower() for a in str(owner_email or "").split(",") if "@" in a}
+    todo = rep[(rep["kind"] == "reply") & (rep["first_lines"].apply(is_yes) | button) & ~rep["message_id"].isin(done)
+               & ~rep["from"].astype(str).str.lower().isin(owners)]           # never Anzhel's own test presses
+    log_old = _read(lpath)
+    answered = set(log_old.get("place_id", pd.Series(dtype=str))) - {""}     # businesses already answered once
+    answered_to = set(log_old.get("to", pd.Series(dtype=str)).str.lower()) - {""}
     for _, r in todo.iterrows():
-        counts["yes_replies"] += 1
         row = sent[sent["email"].str.lower() == r["matched_email"]].head(1) if len(sent) else sent
         if not len(row) and str(r["matched_email"]).startswith("@"):    # contacted through their contact form
             forms = _read(os.path.join(home, "0_contact_forms_sent.csv"))
             row = forms[forms.get("domain", pd.Series(dtype=str)).str.lower() == r["matched_email"][1:]].head(1) \
                 if len(forms) else forms
         place_id = row["place_id"].iloc[0] if len(row) else ""
-        name = (row["name"].iloc[0] if len(row) else "") or "there"
+        if (place_id and place_id in answered) or (not place_id and str(r["from"]).lower() in answered_to):
+            # the same business pressed YES again: one answer is enough (their message still reaches Gmail)
+            pd.DataFrame([{"created_at": today.isoformat(), "reply_message_id": r["message_id"], "place_id": place_id,
+                           "name": "", "to": r["from"], "status": "already_answered"}])[LOG_COLS].to_csv(
+                lpath, mode="a", header=not os.path.exists(lpath), index=False)
+            continue
+        counts["yes_replies"] += 1
+        name = short_name((row["name"].iloc[0] if len(row) else "") or "") or "there"
         audits = load_audit(home, place_id) if place_id else None
         text = compose(name, audits, guide) if audits else None
         status = "drafted"
@@ -283,6 +303,7 @@ def run(home, password, owner_email, today=None, log=print, imap_cls=imaplib.IMA
                     pd.DataFrame([{"created_at": today.isoformat(), "reply_message_id": r["message_id"],
                                    "place_id": place_id, "name": name, "to": r["from"], "status": status}])[
                         LOG_COLS].to_csv(lpath, mode="a", header=not os.path.exists(lpath), index=False)
+                    _remember(answered, answered_to, place_id, r["from"])
                     continue
                 ok = save_draft(msg, password, imap_cls)
                 notify(f"{name} said yes ({r['from']}).\n\nThe reply below is ready in hello@ → Drafts: open it, "
@@ -302,4 +323,5 @@ def run(home, password, owner_email, today=None, log=print, imap_cls=imaplib.IMA
         pd.DataFrame([{"created_at": today.isoformat(), "reply_message_id": r["message_id"], "place_id": place_id,
                        "name": name, "to": r["from"], "status": status}])[LOG_COLS].to_csv(
             lpath, mode="a", header=not os.path.exists(lpath), index=False)
+        _remember(answered, answered_to, place_id, r["from"])
     return counts

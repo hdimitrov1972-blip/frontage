@@ -19,6 +19,8 @@ from email.utils import formataddr, formatdate, make_msgid
 
 import pandas as pd
 
+from names import short_name
+
 SMTP_HOST, SMTP_PORT = "smtp.hostinger.com", 465
 FROM_NAME = "Anzhel at Frontage"      # same plain sender as the first email (version B, 10 Nov)
 REPLY_TO = "hello@frontage.agency"
@@ -99,7 +101,7 @@ def build(row, body, mailbox):
     if first_id:
         msg["In-Reply-To"] = first_id
         msg["References"] = first_id
-    name = str(row.get("name", "")).strip()
+    name = short_name(str(row.get("name", "")).strip())
     msg.set_content(body.replace("{name}", name or "there"))
     return msg
 

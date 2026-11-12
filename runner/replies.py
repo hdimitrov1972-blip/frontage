@@ -98,10 +98,18 @@ def ref_of(place_id):
     return hashlib.md5(str(place_id).encode("utf-8")).hexdigest()[:6].upper()
 
 
-def classify(msg, sent_emails, sent_domains, thread=None, refs=None):
+def owner_addresses():
+    """Anzhel's own addresses (TEST_EMAIL secret, comma separated). His test button presses and anything
+    else he sends to the mailboxes are never counted as a business's reply."""
+    return {a.strip().lower() for a in os.environ.get("TEST_EMAIL", "").split(",") if "@" in a}
+
+
+def classify(msg, sent_emails, sent_domains, thread=None, refs=None, ignore=()):
     """Returns (kind, matched_email) or (None, None) for mail that has nothing to do with our sends.
     kind: bounce | optout | reply | auto"""
     sender = email.utils.parseaddr(str(msg.get("From", "")))[1].lower()
+    if sender in ignore:
+        return None, None                      # Anzhel's own test or note, not a business
     subject = str(msg.get("Subject", ""))
     text = _text(msg)
     is_bounce = (sender.split("@")[0] in ("mailer-daemon", "postmaster")
@@ -171,9 +179,10 @@ def fetch_messages(address, password, since):
             pass
 
 
-def run(home, passwords, today=None, fetch=None, log=print):
+def run(home, passwords, today=None, fetch=None, log=print, ignore=None):
     """passwords: {"hello@frontage.agency": "...", ...}. Returns a dict of counts."""
     today = today or dt.date.today()
+    ignore = owner_addresses() if ignore is None else {a.lower() for a in ignore}
     fetch = fetch or fetch_messages
     sent = _read(os.path.join(home, "0_sent_log.csv"))
     sent_emails = set(sent.get("email", pd.Series(dtype=str)).str.strip().str.lower()) - {""}
@@ -220,7 +229,7 @@ def run(home, passwords, today=None, fetch=None, log=print):
                 mid = str(msg.get("Message-ID", "")).strip() or f"{address}|{msg.get('Date')}|{msg.get('From')}"
                 if mid in seen:
                     continue
-                kind, matched = classify(msg, sent_emails, sent_domains, thread, refs)
+                kind, matched = classify(msg, sent_emails, sent_domains, thread, refs, ignore)
                 if not kind:
                     continue
                 seen.add(mid)
@@ -251,6 +260,8 @@ def run(home, passwords, today=None, fetch=None, log=print):
     every = pd.concat([_read(rpath), pd.DataFrame(new_rows)], ignore_index=True) if new_rows else _read(rpath)
     stop = set()
     for _, r in every.iterrows():
+        if str(r.get("from", "")).lower() in ignore:
+            continue                                                   # Anzhel's own test presses
         refusal = r.get("kind") in ("bounce", "optout") or (               # also older replies the
             r.get("kind") == "reply" and OPT_OUT.search(str(r.get("first_lines", ""))))  # first version missed
         if refusal and "@" in str(r.get("matched_email", "")):
