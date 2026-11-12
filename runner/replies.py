@@ -179,10 +179,50 @@ def fetch_messages(address, password, since):
             pass
 
 
+def purge_own(home, owners, log=print):
+    """Removes Anzhel's own test presses recorded before 12 Nov 2026 (when they still counted as a business's
+    answer), and undoes what they caused: the do-not-contact entry and the 'already answered' mark.
+    A business stays on do-not-contact if it really said no or bounced. Does nothing once clean."""
+    if not owners:
+        return 0
+    rpath = os.path.join(home, "0_replies.csv")
+    rep = _read(rpath)
+    if rep.empty or "from" not in rep.columns:
+        return 0
+    own = rep["from"].str.lower().isin(owners)
+    if not own.any():
+        return 0
+    touched = set(rep.loc[own, "matched_email"].str.lower()) - {""}
+    rest = rep[~own]
+    rest.to_csv(rpath, index=False)
+    still = set()
+    for _, r in rest.iterrows():
+        if r.get("kind") in ("bounce", "optout") or (r.get("kind") == "reply" and OPT_OUT.search(str(r.get("first_lines", "")))):
+            still |= {str(r["matched_email"]).lower(), clean_address(r["matched_email"])}
+    dnc_path = os.path.join(home, "0_do_not_contact.csv")
+    freed = touched - still
+    if freed and os.path.exists(dnc_path):
+        lines = [l.rstrip("\n") for l in open(dnc_path, encoding="utf-8")]
+        keep = [l for l in lines if l.strip().lower() not in freed]
+        if len(keep) != len(lines):
+            open(dnc_path, "w", encoding="utf-8").write("\n".join(keep) + "\n")
+    fpath = os.path.join(home, "0_fix_replies.csv")
+    fx = _read(fpath)
+    if len(fx) and "to" in fx.columns:
+        fx[~fx["to"].str.lower().isin(owners)].to_csv(fpath, index=False)
+    log(f"[replies] removed {int(own.sum())} of your own test presses from the records "
+        f"(do-not-contact freed: {len(freed)})")
+    return int(own.sum())
+
+
 def run(home, passwords, today=None, fetch=None, log=print, ignore=None):
     """passwords: {"hello@frontage.agency": "...", ...}. Returns a dict of counts."""
     today = today or dt.date.today()
     ignore = owner_addresses() if ignore is None else {a.lower() for a in ignore}
+    try:
+        purge_own(home, ignore, log=log)
+    except Exception as e:
+        log(f"[replies] clean-up of own test presses skipped ({type(e).__name__})")
     fetch = fetch or fetch_messages
     sent = _read(os.path.join(home, "0_sent_log.csv"))
     sent_emails = set(sent.get("email", pd.Series(dtype=str)).str.strip().str.lower()) - {""}

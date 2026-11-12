@@ -114,4 +114,27 @@ check("extra presses logged as already answered", sorted(log["status"]) == ["alr
 c = fixreply.run(home, "pw", OWNER, today=dt.date(2026, 11, 13), log=lambda m: None, auto_send=True)
 check("next run sends nothing more", len(SENT) == 1)
 
+
+# ------------------------------------------------------------------ the 12 Nov test presses are cleaned up
+home = tempfile.mkdtemp()
+base = {"seen_at": "2026-11-12", "received": "2026-11-12", "mailbox": "hello@frontage.agency", "first_lines": "x"}
+pd.DataFrame([dict(base, message_id="<1>", kind="reply", **{"from": OWNER}, matched_email="reservations@gatewayhotel.ie",
+                   subject="YES - send the report (ref 14F4E8)"),
+              dict(base, message_id="<2>", kind="optout", **{"from": OWNER}, matched_email="reservations@gatewayhotel.ie",
+                   subject="NO THANKS (ref 14F4E8)"),
+              dict(base, message_id="<3>", kind="optout", **{"from": "info@realno.ie"}, matched_email="info@realno.ie",
+                   subject="Re: x"),
+              dict(base, message_id="<4>", kind="reply", **{"from": "coach@fit.ie"}, matched_email="coach@fit.ie",
+                   subject="Re: y")]).to_csv(home + "/0_replies.csv", index=False)
+open(home + "/0_do_not_contact.csv", "w").write("email_or_domain\ninfo@realno.ie\nreservations@gatewayhotel.ie\n@x.ie\n")
+pd.DataFrame([{"created_at": "2026-11-12", "reply_message_id": "<1>", "place_id": "ChIJ_gateway", "name": "G",
+               "to": OWNER, "status": "sent"}]).to_csv(home + "/0_fix_replies.csv", index=False)
+check("clean-up removes the 2 own rows", replies.purge_own(home, {OWNER}, log=lambda m: None) == 2)
+rep = pd.read_csv(home + "/0_replies.csv", dtype=str)
+dnc = open(home + "/0_do_not_contact.csv").read()
+check("real replies kept", sorted(rep["message_id"]) == ["<3>", "<4>"])
+check("Gateway freed, real 'no' and domains kept", "gatewayhotel" not in dnc and "info@realno.ie" in dnc and "@x.ie" in dnc)
+check("Gateway no longer marked as already answered", len(pd.read_csv(home + "/0_fix_replies.csv")) == 0)
+check("second clean-up does nothing", replies.purge_own(home, {OWNER}, log=lambda m: None) == 0)
+
 print("\nALL RELIABILITY TESTS PASSED")
