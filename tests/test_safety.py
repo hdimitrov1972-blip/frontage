@@ -112,4 +112,39 @@ check("0_PAUSE.txt you deleted during the run is not put back", not os.path.exis
 check("files you didn't touch are left alone", "LEADS_MASTER.csv" not in done)
 check("listing missing: nothing merged, nothing broken", protect.reconcile(d + "/nope.json", d + "/after.json", d,
                                                                           fetch=fetch, log=lambda m: None) == {})
+
+# ---------- archive heals itself, and the one-off recovery fills it from older Drive versions ----------
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tools"))
+import recover_archive  # noqa: E402
+h3 = tempfile.mkdtemp()
+os.makedirs(h3 + "/latest")
+pd.DataFrame([{"sent_at": "2026-11-11T09:00:00", "place_id": "x1", "email": "a@x1.ie", "name": "X One"},
+              {"sent_at": "2026-11-11T09:05:00", "place_id": "x2", "email": "a@x2.ie", "name": "X Two"},
+              {"sent_at": "2026-10-09T09:05:00", "place_id": "x3", "email": "a@x3.ie", "name": "X Three"}]
+             ).to_csv(h3 + "/0_sent_log.csv", index=False)
+pd.DataFrame([{"place_id": "other"}]).to_csv(h3 + "/LEADS_MASTER.csv", index=False)       # rows already dropped
+archive.run(h3, log=lambda m: None)
+a3 = pd.read_csv(h3 + "/0_sent_leads.csv", dtype=str, keep_default_na=False).set_index("place_id")
+check("dropped rows are archived without details (the gap found on 12 Nov)", a3.loc["x1", "Template"] == ""
+      and a3.loc["x1", "pdf_saved"] == "no")
+# the lead comes back into LEADS_MASTER / the zip (or was simply late): the next run completes the row
+pd.DataFrame([{"place_id": "x1", "Template": "outbox_v1_nopdf", "Report_File": "x1.pdf", "Attachment_Name": "X1.pdf"}]
+             ).to_csv(h3 + "/LEADS_MASTER.csv", index=False)
+with zipfile.ZipFile(h3 + "/latest/4A_reports.zip", "w") as z:
+    z.writestr("x1.pdf", b"%PDF x1")
+archive.run(h3, log=lambda m: None)
+a3 = pd.read_csv(h3 + "/0_sent_leads.csv", dtype=str, keep_default_na=False).set_index("place_id")
+check("archive completes an earlier row when its details turn up", a3.loc["x1", "Template"] == "outbox_v1_nopdf"
+      and a3.loc["x1", "pdf_saved"] == "yes" and os.path.exists(h3 + "/sent_reports/x1.pdf"))
+n3 = recover_archive.fill(h3, {"x2": {"Report_File": "x2.pdf", "Clean_Name": "X Two", "city": "Ennis"},
+                               "x3": {"Report_File": "x3.pdf", "Template": "outbox_v1"}},
+                          {"x2.pdf": b"%PDF x2"}, log=lambda m: None)
+a3 = pd.read_csv(h3 + "/0_sent_leads.csv", dtype=str, keep_default_na=False).set_index("place_id")
+check("recovery: sent from 11 Nov without a version mark = version B, and its PDF is kept",
+      a3.loc["x2", "Template"] == "outbox_v1_nopdf" and a3.loc["x2", "pdf_saved"] == "yes" and a3.loc["x2", "city"] == "Ennis")
+check("recovery: older sends stay version A; a PDF that no longer exists is reported, not invented",
+      a3.loc["x3", "Template"] == "outbox_v1" and a3.loc["x3", "pdf_saved"] == "no"
+      and n3["version_b"] == 2 and n3["version_b_with_pdf"] == 2)
+got3 = fixreply.report_for_no_pdf_email(h3, "x2")
+check("a yes from a recovered business gets its report", got3 and got3[0] == b"%PDF x2")
 print("\nALL SAFETY TESTS PASSED")

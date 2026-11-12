@@ -1,0 +1,25 @@
+name: Tests
+
+# Runs the machine's own checks on every change, so a broken change is seen before the next daily run.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -q -r requirements.txt
+      - name: Run the tests
+        run: |
+          for t in replies followup contactforms emailtext freemail suspects domaincheck safety; do
+            echo "== $t"; python tests/test_$t.py | tail -1
+          done

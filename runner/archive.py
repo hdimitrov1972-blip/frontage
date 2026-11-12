@@ -34,13 +34,16 @@ def run(home, log=print):
     known = set(have.get("place_id", pd.Series(dtype=str)))
     first = sent[sent["place_id"] != ""].sort_values("sent_at").drop_duplicates("place_id", keep="first")
     new = first[~first["place_id"].isin(known)]
-    if new.empty:
-        return 0
     m = _read(os.path.join(home, "LEADS_MASTER.csv"))
     m = m.drop_duplicates("place_id", keep="last").set_index("place_id") if "place_id" in m.columns else pd.DataFrame()
     zpath = os.path.join(home, "latest", "4A_reports.zip")
     z = zipfile.ZipFile(zpath) if os.path.exists(zpath) else None
     names = {os.path.basename(n): n for n in z.namelist()} if z else {}
+    healed = _heal(home, have, m, z, names, path) if len(have) else 0
+    if healed:
+        log(f"[archive] {healed} earlier row(s) completed (version / PDF found now)")
+    if new.empty:
+        return 0
     rows = []
     for _, s in new.iterrows():
         r = m.loc[s["place_id"]] if s["place_id"] in m.index else {}
@@ -62,6 +65,30 @@ def run(home, log=print):
     lost = sum(r["pdf_saved"] == "no" for r in rows)
     log(f"[archive] {len(rows)} emailed business(es) kept for good" + (f" ({lost} without a PDF on hand)" if lost else ""))
     return len(rows)
+
+
+def _heal(home, have, m, z, names, path):
+    """Rows archived without their version or PDF get them as soon as they are available."""
+    n = 0
+    for i, row in have.iterrows():
+        pid, changed = row["place_id"], False
+        if pid in m.index:
+            for c in ("Template", "Report_File", "Attachment_Name"):
+                v = str(m.loc[pid].get(c, ""))
+                if not have.at[i, c] and v:
+                    have.at[i, c] = v
+                    changed = True
+        f = have.at[i, "Report_File"]
+        if have.at[i, "pdf_saved"] != "yes" and f and f in names:
+            os.makedirs(os.path.join(home, PDF_DIR), exist_ok=True)
+            with open(os.path.join(home, PDF_DIR, f), "wb") as out:
+                out.write(z.read(names[f]))
+            have.at[i, "pdf_saved"] = "yes"
+            changed = True
+        n += changed
+    if n:
+        have[COLS].to_csv(path, index=False)
+    return n
 
 
 def lookup(home, place_id):

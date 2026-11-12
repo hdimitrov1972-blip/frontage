@@ -13,7 +13,7 @@ on:
       mode:
         description: "what to run"
         type: choice
-        options: [test, live, replies, followup-test, fixreply-test, upgrade-sender, upgrade-sender-24, check-mailboxes, analyze-audits]
+        options: [test, live, replies, followup-test, fixreply-test, upgrade-sender, upgrade-sender-24, check-mailboxes, analyze-audits, recover-archive]
         default: test
       test_to:
         description: "test only: extra addresses, comma separated (e.g. a mail-tester.com address)"
@@ -93,6 +93,14 @@ jobs:
           python tools/upgrade_sender_v24.py /content/v23.ipynb "/content/Frontage Sender v2.4 LIVE.ipynb"
           rclone copyto "/content/Frontage Sender v2.4 LIVE.ipynb" "gdrive:Colab Notebooks/Frontage Sender v2.4 LIVE.ipynb"
           echo "saved: Colab Notebooks/Frontage Sender v2.4 LIVE.ipynb (v2.3 kept as it was)"
+
+      - name: Fill the permanent archive from older Drive versions (one-off, reads only)
+        if: env.MODE == 'recover-archive'
+        run: |
+          python tools/recover_archive.py "$DRIVE_DIR" /content/recover
+          rclone copy "$DRIVE_DIR/sent_reports" "gdrive:Frontage/sent_reports" --quiet --transfers 16
+          rclone copyto "$DRIVE_DIR/0_sent_leads.csv" "gdrive:Frontage/0_sent_leads.csv"
+          echo "saved: 0_sent_leads.csv and sent_reports/ ($(ls "$DRIVE_DIR/sent_reports" | wc -l) PDFs)"
 
       - name: Count website problems in all speed tests (one-off)
         if: env.MODE == 'analyze-audits'
