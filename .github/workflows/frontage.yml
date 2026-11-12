@@ -13,11 +13,16 @@ on:
       mode:
         description: "what to run"
         type: choice
-        options: [test, live, replies, followup-test, fixreply-test, upgrade-sender, upgrade-sender-24, check-mailboxes, analyze-audits, recover-archive]
+        options: [test, live, replies, followup-test, fixreply-test, upgrade-sender, upgrade-sender-24, upgrade-sender-25, check-mailboxes, analyze-audits, recover-archive]
         default: test
       test_to:
         description: "test only: extra addresses, comma separated (e.g. a mail-tester.com address)"
         type: string
+        default: ""
+      test_buttons:
+        description: "test only: reply buttons on or off (empty = as in the settings)"
+        type: choice
+        options: ["", "on", "off"]
         default: ""
   schedule:                     # UTC = Irish time in winter, Irish time minus 1 hour in summer
     - cron: "17 6 * * *"        # every day: search and pipeline when stock is low; sender on weekdays
@@ -94,6 +99,17 @@ jobs:
           rclone copyto "/content/Frontage Sender v2.4 LIVE.ipynb" "gdrive:Colab Notebooks/Frontage Sender v2.4 LIVE.ipynb"
           echo "saved: Colab Notebooks/Frontage Sender v2.4 LIVE.ipynb (v2.3 kept as it was)"
 
+      - name: Make Sender v2.5 on Drive (long/short test + buttons, one-off)
+        if: env.MODE == 'upgrade-sender-25'
+        run: |
+          if rclone lsf "gdrive:Colab Notebooks/" | grep -qx "Frontage Sender v2.5 LIVE.ipynb"; then
+            echo "Sender v2.5 is already on Drive; nothing done."; exit 0
+          fi
+          rclone copyto "gdrive:Colab Notebooks/Frontage Sender v2.4 LIVE.ipynb" /content/v24.ipynb
+          python tools/upgrade_sender_v25.py /content/v24.ipynb "/content/Frontage Sender v2.5 LIVE.ipynb"
+          rclone copyto "/content/Frontage Sender v2.5 LIVE.ipynb" "gdrive:Colab Notebooks/Frontage Sender v2.5 LIVE.ipynb"
+          echo "saved: Colab Notebooks/Frontage Sender v2.5 LIVE.ipynb (v2.4 kept as it was)"
+
       - name: Fill the permanent archive from older Drive versions (one-off, reads only)
         if: env.MODE == 'recover-archive'
         run: |
@@ -131,6 +147,7 @@ jobs:
           PAGESPEED_KEY: ${{ secrets.PAGESPEED_KEY }}
           TEST_EMAIL: ${{ secrets.TEST_EMAIL }}
           TEST_TO: ${{ inputs.test_to }}
+          TEST_BUTTONS: ${{ inputs.test_buttons }}
         run: FRONTAGE_RCLONE=1 python runner/daily.py run --mode "$MODE"
 
       - name: Never keep a half-finished pipeline

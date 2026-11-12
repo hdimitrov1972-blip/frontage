@@ -136,6 +136,28 @@ def compose(name, audits, guide):
     return "\n".join(out)
 
 
+BUTTON_YES = re.compile(r"^\s*YES - send the report \(ref [0-9A-F]{6}\)", re.I)
+AUTO_SEND_MAX = 10        # button-yes replies sent by the machine per run; more wait as drafts
+
+
+def promised_report(template):
+    """True for every first email that went out without the PDF ("reply yes and I'll send it")."""
+    t = str(template)
+    return t.startswith("outbox_v1_nopdf") or t.startswith("outbox_v2")
+
+
+def send_reply(msg, to, password, smtp=smtplib.SMTP_SSL):
+    s = smtp("smtp.hostinger.com", 465, timeout=30)
+    try:
+        s.login(HELLO, password)
+        s.send_message(msg, to_addrs=[to])
+    finally:
+        try:
+            s.quit()
+        except Exception:
+            pass
+
+
 def report_for_no_pdf_email(home, place_id):
     """(pdf bytes, file name) when this business got version B of the first email (no PDF attached,
     "reply yes and I'll send it"), so the yes-reply carries the report. Otherwise None."""
@@ -146,7 +168,7 @@ def report_for_no_pdf_email(home, place_id):
     m = _read(os.path.join(home, "LEADS_MASTER.csv"))
     row = m[m["place_id"] == place_id].head(1) if len(m) and "Template" in m.columns else m.iloc[0:0]
     rec = row.iloc[0].to_dict() if len(row) else archive.lookup(home, place_id)   # left LEADS_MASTER: archive
-    if rec.get("Template") != "outbox_v1_nopdf":
+    if not promised_report(rec.get("Template", "")):
         return None
     file = rec.get("Report_File", "")
     name = rec.get("Attachment_Name", "") or file
@@ -203,9 +225,12 @@ def notify(text, subject, password, to, smtp=smtplib.SMTP_SSL):
     s.quit()
 
 
-def run(home, password, owner_email, today=None, log=print, imap_cls=imaplib.IMAP4_SSL, smtp=smtplib.SMTP_SSL):
+def run(home, password, owner_email, today=None, log=print, imap_cls=imaplib.IMAP4_SSL, smtp=smtplib.SMTP_SSL,
+        auto_send=False):
+    """auto_send: a YES from the email's own button (exact subject + reference code) is answered by the machine
+    at once, with the fix note and the report; Anzhel gets a copy. Typed answers stay drafts for him to check."""
     today = today or dt.date.today()
-    counts = {"yes_replies": 0, "drafted": 0, "needs_you": 0}
+    counts = {"yes_replies": 0, "drafted": 0, "needs_you": 0, "sent_auto": 0}
     gpath = os.path.join(home, "fix_guide.json")
     if not os.path.exists(gpath):
         return counts
@@ -216,7 +241,8 @@ def run(home, password, owner_email, today=None, log=print, imap_cls=imaplib.IMA
     lpath = os.path.join(home, "0_fix_replies.csv")
     done = set(_read(lpath).get("reply_message_id", pd.Series(dtype=str)))
     sent = _read(os.path.join(home, "0_sent_log.csv"))
-    todo = rep[(rep["kind"] == "reply") & rep["first_lines"].apply(is_yes) & ~rep["message_id"].isin(done)]
+    button = rep["subject"].astype(str).apply(lambda x: bool(BUTTON_YES.match(x)))
+    todo = rep[(rep["kind"] == "reply") & (rep["first_lines"].apply(is_yes) | button) & ~rep["message_id"].isin(done)]
     for _, r in todo.iterrows():
         counts["yes_replies"] += 1
         row = sent[sent["email"].str.lower() == r["matched_email"]].head(1) if len(sent) else sent
@@ -247,6 +273,17 @@ def run(home, password, owner_email, today=None, log=print, imap_cls=imaplib.IMA
                 msg.set_content(text)
                 if pdf:
                     msg.add_attachment(pdf[0], maintype="application", subtype="pdf", filename=pdf[1])
+                if auto_send and BUTTON_YES.match(str(r["subject"])) and counts["sent_auto"] < AUTO_SEND_MAX:
+                    send_reply(msg, r["from"], password, smtp)
+                    status = "sent"
+                    counts["sent_auto"] += 1
+                    notify(f"{name} pressed YES ({r['from']}).\n\nThe machine sent them the reply below"
+                           f"{' with their PDF report' if pdf else ''}. Nothing to do — watch for their answer.\n\n"
+                           + "-" * 40 + "\n\n" + text, f"✅ {name} said YES — report sent", password, owner_email, smtp)
+                    pd.DataFrame([{"created_at": today.isoformat(), "reply_message_id": r["message_id"],
+                                   "place_id": place_id, "name": name, "to": r["from"], "status": status}])[
+                        LOG_COLS].to_csv(lpath, mode="a", header=not os.path.exists(lpath), index=False)
+                    continue
                 ok = save_draft(msg, password, imap_cls)
                 notify(f"{name} said yes ({r['from']}).\n\nThe reply below is ready in hello@ → Drafts: open it, "
                        f"check it, press Send. Or copy it from here.\n\n" + "-" * 40 + "\n\n" + text,

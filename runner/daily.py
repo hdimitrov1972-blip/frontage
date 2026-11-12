@@ -29,6 +29,7 @@ import emailtext
 import freemail
 import followup
 import replies
+import shorttext
 import summary
 import suspects
 
@@ -214,9 +215,10 @@ def run(mode):
         ok &= check_replies(log)
         try:
             c = fixreply.run(DRIVE, passwords.get("hello@frontage.agency", ""), os.environ.get("TEST_EMAIL", ""),
-                             log=lambda m: say(m, log))
+                             log=lambda m: say(m, log), auto_send=bool(CONFIG.get("auto_send_button_yes", False)))
             if c["yes_replies"]:
-                say(f"[fix reply] 'yes' replies: {c['yes_replies']}   ready in hello@ Drafts: {c['drafted']}   "
+                say(f"[fix reply] 'yes' replies: {c['yes_replies']}   sent by the machine (button): {c['sent_auto']}   "
+                    f"ready in hello@ Drafts: {c['drafted']}   "
                     f"need you: {c['needs_you']}", log, note=True)
         except Exception as e:
             say(f"[fix reply] FAILED ({type(e).__name__})", log)
@@ -301,6 +303,15 @@ def run(mode):
         except Exception as e:
             say(f"[email text] FAILED ({type(e).__name__}) — those leads wait", log)
 
+    # 2e. Short email text for the long/short split test (only where a real problem was found)
+    if mode in ("live", "test"):
+        try:
+            n = shorttext.fill(DRIVE, log=lambda m: say(m, log))
+            if n:
+                say(f"[short text] written for {n} lead(s)", log, note=True)
+        except Exception as e:
+            say(f"[short text] FAILED ({type(e).__name__}) — those leads get the long email", log)
+
     # 3. Sender
     inside, when = in_send_window()
     if mode == "test":
@@ -313,7 +324,10 @@ def run(mode):
         settings = {"TEST_SEND_TO": json.dumps(tos)}
         nb = os.path.join(NB_DIR, CONFIG["notebooks"]["sender"])
         if os.path.exists(nb) and "TEST_VARIANTS = " in open(nb, encoding="utf-8").read():
-            settings["TEST_VARIANTS"] = json.dumps(["A", "B"])      # split test: send both versions
+            v25 = "SHORT_SHARE = " in open(nb, encoding="utf-8").read()
+            settings["TEST_VARIANTS"] = json.dumps(["L", "S"] if v25 else ["A", "B"])     # send both versions
+            if v25 and os.environ.get("TEST_BUTTONS", "") in ("on", "off"):
+                settings["BUTTONS"] = "True" if os.environ["TEST_BUTTONS"] == "on" else "False"
         ok &= run_step("sender", log, settings)
     elif os.path.exists(os.path.join(DRIVE, "0_PAUSE.txt")):
         say("[sender] PAUSED — 0_PAUSE.txt is on Drive (too many bounces); nothing sent", log, note=True)
@@ -325,6 +339,11 @@ def run(mode):
         nb = os.path.join(NB_DIR, CONFIG["notebooks"]["sender"])
         if "split_b_share" in CONFIG and os.path.exists(nb) and "SPLIT_B_SHARE = " in open(nb, encoding="utf-8").read():
             settings["SPLIT_B_SHARE"] = str(float(CONFIG["split_b_share"]))   # 1.0 = everyone gets version B
+        nb_src = open(nb, encoding="utf-8").read() if os.path.exists(nb) else ""
+        if "short_share" in CONFIG and "SHORT_SHARE = " in nb_src:
+            settings["SHORT_SHARE"] = str(float(CONFIG["short_share"]))       # share that gets the short email
+        if "buttons" in CONFIG and "BUTTONS = " in nb_src:
+            settings["BUTTONS"] = "True" if CONFIG["buttons"] else "False"
         ok &= run_step("sender", log, settings)
         after, per_box = sent_today()
         say(f"[sender] sent now: {after - before}   today in total: {after}   per mailbox: {per_box}", log, note=True)

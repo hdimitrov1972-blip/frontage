@@ -89,7 +89,16 @@ def _first_lines(text, n=6):
     return " ".join(lines)
 
 
-def classify(msg, sent_emails, sent_domains, thread=None):
+REF = re.compile(r"\(ref ([0-9A-F]{6})\)")
+
+
+def ref_of(place_id):
+    """The code the sender puts in the button replies (same formula as the sender notebook)."""
+    import hashlib
+    return hashlib.md5(str(place_id).encode("utf-8")).hexdigest()[:6].upper()
+
+
+def classify(msg, sent_emails, sent_domains, thread=None, refs=None):
     """Returns (kind, matched_email) or (None, None) for mail that has nothing to do with our sends.
     kind: bounce | optout | reply | auto"""
     sender = email.utils.parseaddr(str(msg.get("From", "")))[1].lower()
@@ -110,6 +119,8 @@ def classify(msg, sent_emails, sent_domains, thread=None):
         matched = sender
     elif dom not in FREE_MAIL and dom in sent_domains:
         matched = sent_domains[dom]
+    elif refs and REF.search(subject) and REF.search(subject).group(1) in refs:
+        matched = refs[REF.search(subject).group(1)]          # a button reply sent from another address
     elif thread and any(t in thread for t in re.findall(r"<[^>]+>", f"{msg.get('In-Reply-To', '')} {msg.get('References', '')}")):
         # an answer to one of our emails, sent from another address (e.g. the owner's own Gmail)
         matched = next(thread[t] for t in re.findall(r"<[^>]+>", f"{msg.get('In-Reply-To', '')} "
@@ -184,6 +195,13 @@ def run(home, passwords, today=None, fetch=None, log=print):
                 if mid_.startswith("<") and e:
                     thread[mid_] = e
 
+    refs = {}                                     # button reference code -> the address we wrote to
+    sl = _read(os.path.join(home, "0_sent_log.csv"))
+    if len(sl) and "place_id" in sl.columns:
+        for pid, e in zip(sl["place_id"], sl["email"].str.strip().str.lower()):
+            if pid and e:
+                refs[ref_of(pid)] = e
+
     rpath = os.path.join(home, "0_replies.csv")
     old = _read(rpath)
     if len(old) and any(c not in old.columns for c in REPLY_COLS):     # older file: add the new columns once
@@ -202,7 +220,7 @@ def run(home, passwords, today=None, fetch=None, log=print):
                 mid = str(msg.get("Message-ID", "")).strip() or f"{address}|{msg.get('Date')}|{msg.get('From')}"
                 if mid in seen:
                     continue
-                kind, matched = classify(msg, sent_emails, sent_domains, thread)
+                kind, matched = classify(msg, sent_emails, sent_domains, thread, refs)
                 if not kind:
                     continue
                 seen.add(mid)

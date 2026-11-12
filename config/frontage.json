@@ -32,5 +32,8 @@
     "start": "08:00",
     "end": "17:00"
   },
-  "split_b_share": 1.0
+  "split_b_share": 1.0,
+  "short_share": 0.0,
+  "buttons": false,
+  "auto_send_button_yes": true
 }
