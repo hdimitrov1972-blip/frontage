@@ -194,6 +194,16 @@ jobs:
               python runner/protect.py /content/drive_before.json /content/drive_after.json "$DRIVE_DIR" || true
             fi
             rclone copy "$DRIVE_DIR" "gdrive:Frontage" --checksum --quiet
+            # files the run removed on purpose (a bounce stop that lifted itself, slow mode ending):
+            # 'rclone copy' never deletes, so remove them on Drive too
+            DEL="$(dirname "$DRIVE_DIR")/delete_on_drive.txt"
+            if [ -f "$DEL" ]; then
+              for f in $(sort -u "$DEL"); do
+                if [ ! -e "$DRIVE_DIR/$f" ]; then
+                  rclone deletefile "gdrive:Frontage/$f" --quiet && echo "removed on Drive: $f" || true
+                fi
+              done
+            fi
           else
             rclone copy "$DRIVE_DIR/runs" "gdrive:Frontage/runs" --checksum --quiet
           fi

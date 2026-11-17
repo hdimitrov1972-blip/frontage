@@ -1,6 +1,7 @@
 """Short alert emails to Anzhel's own Gmail when something needs him — at most once per day per kind.
 
-Kinds: a run failed; no first emails went out on a weekday after the sending window closed.
+Kinds: a run failed; no first emails went out on a weekday after the sending window closed;
+the bounce brake changed (slowed down, stopped, back to normal, stop lifted itself).
 """
 import datetime as dt
 import os
@@ -27,7 +28,11 @@ def send(home, kind, text, password, to, day, notify, log=print):
     if not to or not password or already_sent(home, kind, day):
         return False
     subject = {"failed": "⚠️ Frontage: a run failed today",
-               "zero_sent": "⚠️ Frontage: no emails went out today"}.get(kind, "⚠️ Frontage alert")
+               "zero_sent": "⚠️ Frontage: no emails went out today",
+               "brake_slow_on": "🐢 Frontage: sending slowed down (bounces over 3%)",
+               "brake_slow_off": "✅ Frontage: sending back to normal speed",
+               "brake_pause_on": "⛔ Frontage: sending stopped (bounces over 5%)",
+               "brake_lifted": "✅ Frontage: the bounce stop lifted itself — sending again"}.get(kind, "⚠️ Frontage alert")
     notify(text, subject, password, to)
     path = os.path.join(home, NAME)
     pd.DataFrame([{"day": day, "kind": kind, "text": text[:200]}]).to_csv(
@@ -50,7 +55,8 @@ def check(home, ok, local_now, window, password, to, notify, log=print):
                         "runs (newest file). Ask Claude to check it.", password, to, day, notify, log))
     if local_now.weekday() in window["weekdays"] and local_now.strftime("%H:%M") >= window["end"]:
         if sent_today(home, day) == 0:
-            why = ("Sending is PAUSED (0_PAUSE.txt is on Drive: too many bounces)."
+            why = ("Sending is PAUSED (0_PAUSE.txt is on Drive: too many bounces). The file says whether it "
+                   "lifts itself."
                    if os.path.exists(os.path.join(home, "0_PAUSE.txt")) else
                    "The reason isn't clear — maybe no ready leads, or the sender failed.")
             out.append(send(home, "zero_sent", f"No first emails went out today ({day}).\n\n{why}\n\n"
