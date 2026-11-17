@@ -389,7 +389,8 @@ def _bounce_days(rep):
 def bounce_brake(home, today):
     """The bounce brake, three steps (bounces over the last 7 days, first emails and follow-ups both count):
       up to 3%        -> normal sending
-      over 3%, to 5%  -> SLOW: 0_SLOW.txt on Drive, the sender sends about half (slow_daily_max in the config)
+      over 3%, to 5%  -> SLOW: 0_SLOW.txt on Drive, the sender sends about half (slow_daily_max in the config),
+                         only to addresses on the business's own website domain (Sender v2.6 SAFE_ONLY)
       over 5%         -> STOP: 0_PAUSE.txt on Drive, nothing is sent
     Each needs at least 3 bounces. Bounced addresses are already on do-not-contact, so a stop the brake made
     lifts itself after 2 whole weekdays with no new bounce, at most twice in 30 days; the next stop waits for
@@ -458,7 +459,7 @@ def bounce_brake(home, today):
         return {"state": "pause", "event": "pause_on", "text": (lifted + "\n\n" if lifted else "") + text}
     if n_sent and n_bounce >= BOUNCE_MIN and rate > BOUNCE_LIMIT:
         text = (f"Slow sending since {today.isoformat()}: {numbers}.\nThe sender sends about half as many emails "
-                f"a day. Back to normal by itself when bounces drop to {BOUNCE_LIMIT:.0%} or below.\n")
+                f"a day, only to addresses on the business's own website domain. Back to normal by itself when bounces drop to {BOUNCE_LIMIT:.0%} or below.\n")
         if not was_slow:
             with open(slow, "w", encoding="utf-8") as f:
                 f.write(text)
