@@ -30,6 +30,7 @@ import freemail
 import followup
 import names
 import replies
+import targeting
 import shorttext
 import summary
 import suspects
@@ -283,6 +284,13 @@ def run(mode):
             freemail.move_to_phone(DRIVE, log=lambda m: say(m, log))
         except Exception as e:
             say(f"[free mail] FAILED ({type(e).__name__})", log)
+
+    # 2c3. Small owner-run places first; hotels, chains and big venues go to the back of the email queue
+    if mode in ("live", "test"):
+        try:
+            targeting.run(DRIVE, enabled=CONFIG.get("small_first", True), log=lambda m: say(m, log))
+        except Exception as e:
+            say(f"[targeting] FAILED ({type(e).__name__}) — the queue keeps its old order", log)
 
     # 2c. Contact-form list for Anzhel's phone (nothing is sent by the machine)
     if mode == "live" and CONFIG.get("contact_forms_enabled", True):

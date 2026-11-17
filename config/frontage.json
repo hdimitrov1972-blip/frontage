@@ -36,5 +36,6 @@
   "short_share": 0.5,
   "buttons": true,
   "auto_send_button_yes": true,
-  "slow_daily_max": 24
+  "slow_daily_max": 24,
+  "small_first": true
 }

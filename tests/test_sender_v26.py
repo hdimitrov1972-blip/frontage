@@ -52,7 +52,12 @@ df = pd.DataFrame(rows)
 ns["load_sent_log"] = lambda: pd.DataFrame(columns=["place_id", "email"])
 ns["load_dnc"] = lambda: set()
 ns["REPORTS_DIR"] = os.path.join(home, "reports")
-check("normal: all 3 eligible", len(ns["eligible_leads"](df.copy())) == 3)
+check("normal: all 3 eligible, best score first when no tiers",
+      list(ns["eligible_leads"](df.copy())["place_id"]) == ["p0", "p1", "p2"])
+tiered = df.copy()
+tiered["Target_Tier"] = ["2", "1", ""]
+check("small places first: tier 2 (hotel) goes last even with the best score",
+      list(ns["eligible_leads"](tiered)["place_id"]) == ["p1", "p2", "p0"])
 ns["SAFE_ONLY"] = True
 safe = ns["eligible_leads"](df.copy())
 check("slow mode: only the 2 on their own website domain", sorted(safe["place_id"]) == ["p0", "p2"])
