@@ -355,6 +355,9 @@ def run(mode):
             settings["SHORT_SHARE"] = str(float(CONFIG["short_share"]))       # share that gets the short email
         if "buttons" in CONFIG and "BUTTONS = " in nb_src:
             settings["BUTTONS"] = "True" if CONFIG["buttons"] else "False"
+        if os.path.exists(os.path.join(DRIVE, replies.SLOW_FILE)) and "DOMAIN_DAILY_MAX = " in nb_src:
+            settings["DOMAIN_DAILY_MAX"] = str(int(CONFIG.get("slow_daily_max", 24)))
+            say(f"[sender] SLOW — bounces over 3%: at most {settings['DOMAIN_DAILY_MAX']} emails today", log, note=True)
         ok &= run_step("sender", log, settings)
         after, per_box = sent_today()
         say(f"[sender] sent now: {after - before}   today in total: {after}   per mailbox: {per_box}", log, note=True)
@@ -428,10 +431,22 @@ def check_replies(log):
             import traceback
             traceback.print_exc(file=f)
         return False
+    brake = c.get("brake") or {}
+    flag = {"pause": "   ⛔ SENDING STOPPED (bounces)", "slow": "   🐢 SLOW SENDING (bounces over 3%)"}
     say(f"[replies] mailboxes read: {c['mailboxes_read']}/5   new: {c['reply']} replies, {c['optout']} no-thanks, "
         f"{c['bounce']} bounces, {c['auto']} auto-replies   added to do-not-contact: "
-        f"{c['added_to_do_not_contact']}" + ("   ⛔ SENDING PAUSED (bounces over 3%)" if c["paused"] else ""),
-        log, note=True)
+        f"{c['added_to_do_not_contact']}" + flag.get(brake.get("state"), ""), log, note=True)
+    if brake.get("event"):
+        say(f"[brake] {brake['event']}: {brake.get('text', '').splitlines()[0] if brake.get('text') else ''}",
+            log, note=True)
+        try:
+            day = dt.datetime.now(ZoneInfo(CONFIG["send_window"]["timezone"])).date().isoformat()
+            alerts.send(DRIVE, "brake_" + brake["event"], brake.get("text", "") +
+                        "\n\nDetails: My Drive/Frontage/runs (newest log).",
+                        passwords.get("hello@frontage.agency", ""), os.environ.get("TEST_EMAIL", ""), day,
+                        notify=fixreply.notify, log=lambda m: say(m, log))
+        except Exception as e:
+            say(f"[alert] could not send ({type(e).__name__})", log)
     return c["mailboxes_read"] == 5
 
 

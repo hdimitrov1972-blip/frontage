@@ -84,6 +84,7 @@ def week_numbers(home, today, ready_leads):
         "weekly_check": int(((rv.get("Approve", pd.Series(dtype=str)) == "")
                              & rv.get("Hint", pd.Series(dtype=str)).str.startswith("weekly check")).sum()) if len(rv) else 0,
         "paused": os.path.exists(os.path.join(home, "0_PAUSE.txt")),
+        "slow": os.path.exists(os.path.join(home, "0_SLOW.txt")),
         "forms_sent": int((_read(os.path.join(home, "0_contact_forms_sent.csv")).get("done_on", pd.Series(dtype=str))
                            >= start).sum()),
         "forms_waiting": _list_rows(os.path.join(home, "Contact_forms_to_send.xlsx")),
@@ -99,7 +100,10 @@ def week_numbers(home, today, ready_leads):
 def text(n, today):
     lines = [f"Frontage — week to {today.strftime('%A %d %B %Y')}", ""]
     if n["paused"]:
-        lines += ["⛔ SENDING IS PAUSED: too many bounces. See 0_PAUSE.txt in My Drive/Frontage.", ""]
+        lines += ["⛔ SENDING IS PAUSED: too many bounces. See 0_PAUSE.txt in My Drive/Frontage "
+                  "(it says whether it lifts itself).", ""]
+    elif n.get("slow"):
+        lines += ["🐢 SLOW SENDING: bounces over 3%, so about half a day's emails. Back to normal by itself.", ""]
     lines += [
         f"First emails sent:      {n['first_emails']}",
         f"Follow-ups sent:        {n['follow_ups']}" + (f"   (by text: {n['follow_ups_by_text']})" if n.get("follow_ups_by_text") else ""),

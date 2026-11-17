@@ -163,6 +163,76 @@ pd.DataFrame([{"sent_at": "2026-11-10T09:00:00", "email": f"d{i}@d.ie"} for i in
 check("after resume: 3 new bounces of 50 (20 first + 30 follow-ups) = 6% -> paused again",
       replies.check_bounce_brake(home5, dt.date(2026, 11, 10)) and "from 50 emails" in open(home5 + "/0_PAUSE.txt").read())
 
+# Brake in three steps (17 Nov 2026): over 3% = slow, over 5% = stop, a stop lifts itself
+def brake_home(n_sent, bounce_days, sent_day="2026-11-10"):
+    h = tempfile.mkdtemp()
+    os.environ["FRONTAGE_DELETE_LIST"] = h + "/../" + os.path.basename(h) + "_delete.txt"
+    pd.DataFrame([{"sent_at": f"{sent_day}T09:00:00", "email": f"s{i}@s.ie"} for i in range(n_sent)]).to_csv(
+        h + "/0_sent_log.csv", index=False)
+    pd.DataFrame([{"seen_at": d, "received": d, "kind": "bounce", "matched_email": f"x{i}@x.ie", "message_id": f"<q{i}>"}
+                  for i, d in enumerate(bounce_days)]).to_csv(h + "/0_replies.csv", index=False)
+    return h
+
+
+def deleted(h):
+    p_ = os.environ["FRONTAGE_DELETE_LIST"]
+    return open(p_).read().split() if os.path.exists(p_) else []
+
+
+FRI = dt.date(2026, 11, 13)
+h = brake_home(231, ["2026-11-10"] * 7)
+b = replies.bounce_brake(h, FRI)
+check("13 Nov case: 7 of 231 (3.0%) -> slow, not stopped", b["state"] == "slow" and b["event"] == "slow_on"
+      and os.path.exists(h + "/0_SLOW.txt") and not os.path.exists(h + "/0_PAUSE.txt")
+      and not replies.check_bounce_brake(h, FRI))
+check("slow again next check: no second alert", replies.bounce_brake(h, FRI)["event"] is None)
+pd.DataFrame([{"sent_at": "2026-11-12T09:00:00", "email": f"t{i}@t.ie"} for i in range(60)]).to_csv(
+    h + "/0_sent_log.csv", mode="a", header=False, index=False)
+b = replies.bounce_brake(h, FRI)
+check("7 of 291 (2.4%) -> back to normal, 0_SLOW.txt removed here and on Drive",
+      b["state"] == "normal" and b["event"] == "slow_off" and not os.path.exists(h + "/0_SLOW.txt")
+      and "0_SLOW.txt" in deleted(h))
+
+h = brake_home(100, ["2026-11-12"] * 6)
+b = replies.bounce_brake(h, FRI)
+check("6 of 100 (6%) -> stop that lifts itself", b["state"] == "pause" and b["event"] == "pause_on"
+      and replies.AUTO_MARK in open(h + "/0_PAUSE.txt").read())
+check("Tue 17 (1 whole weekday since Fri): still stopped", replies.check_bounce_brake(h, dt.date(2026, 11, 17)))
+b = replies.bounce_brake(h, dt.date(2026, 11, 18))
+check("Wed 18 (Mon + Tue passed, no new bounce): lifted, removed on Drive, remembered",
+      b["state"] == "normal" and b["event"] == "lifted" and not os.path.exists(h + "/0_PAUSE.txt")
+      and "0_PAUSE.txt" in deleted(h) and "2026-11-13,2026-11-18" in open(h + "/0_auto_lift_history.csv").read())
+check("after the lift the count starts fresh (old bounces not counted)",
+      not replies.check_bounce_brake(h, dt.date(2026, 11, 18)))
+
+h = brake_home(100, ["2026-11-12"] * 6)
+replies.bounce_brake(h, FRI)
+pd.DataFrame([{"seen_at": "2026-11-16", "received": "2026-11-16", "kind": "bounce", "matched_email": "late@x.ie",
+               "message_id": "<late>"}]).to_csv(h + "/0_replies.csv", mode="a", header=False, index=False)
+check("a late bounce on Mon 16 moves the lift: Wed 18 still stopped, Thu 19 lifted",
+      replies.check_bounce_brake(h, dt.date(2026, 11, 18)) and not replies.check_bounce_brake(h, dt.date(2026, 11, 19)))
+
+h = brake_home(100, [])
+open(h + "/0_PAUSE.txt", "w").write("Sending paused on 2026-11-02 by Anzhel\n")
+check("a stop Anzhel wrote himself never lifts itself", replies.check_bounce_brake(h, dt.date(2026, 11, 20)))
+
+h = brake_home(100, ["2026-11-12"] * 6)
+pd.DataFrame([{"paused_on": "2026-10-20", "lifted_on": "2026-10-23"}, {"paused_on": "2026-11-02", "lifted_on": "2026-11-05"}]
+             ).to_csv(h + "/0_auto_lift_history.csv", index=False)
+replies.bounce_brake(h, FRI)
+check("third stop in 30 days: waits for Anzhel", "does NOT lift itself" in open(h + "/0_PAUSE.txt").read()
+      and replies.check_bounce_brake(h, dt.date(2026, 11, 25)))
+
+h = brake_home(100, ["2026-11-12"] * 6)
+replies.bounce_brake(h, FRI)
+body = open(h + "/0_PAUSE.txt").read()
+replies.bounce_brake(h, dt.date(2026, 11, 18))
+open(h + "/0_PAUSE.txt", "w").write(body)              # an old copy comes back from Drive
+replies.bounce_brake(h, dt.date(2026, 11, 18))
+check("a lift is remembered once, even if the old stop file comes back",
+      open(h + "/0_auto_lift_history.csv").read().count("2026-11-13") == 1 and not os.path.exists(h + "/0_PAUSE.txt"))
+os.environ.pop("FRONTAGE_DELETE_LIST")
+
 # Reviewer's cases (11 Nov): a yes that mentions opening days is not an opt-out; "off your list" is not a yes
 import fixreply  # noqa: E402
 check("'Yes please, we are closed Mondays' is not an opt-out", not replies.OPT_OUT.search("Yes please, we are closed Mondays but call me")

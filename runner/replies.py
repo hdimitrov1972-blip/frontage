@@ -2,7 +2,7 @@
 
 - 0_replies.csv          every reply, bounce and auto-reply from a business we emailed (append-only)
 - 0_do_not_contact.csv   bounced addresses and "no thanks / unsubscribe / closed" replies are added
-- 0_PAUSE.txt            written when bounces pass 3% over 7 days: sending stops until it is deleted
+- 0_SLOW.txt / 0_PAUSE.txt  the bounce brake (see bounce_brake): over 3% bounces = half speed, over 5% = stop
 
 Nothing is ever deleted or marked as read in the mailboxes. Public log: counts only.
 """
@@ -34,9 +34,14 @@ AUTO_SUBJECT = re.compile(r"(auto(matic)?[ -]?(reply|response)|out of (the )?off
                           r"thank(s| you) for (your (email|message|enquiry)|contacting)|we (have )?received)", re.I)
 EMAIL_RE = re.compile(r"[A-Za-z0-9._%+'-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 REPLY_COLS = ["seen_at", "received", "mailbox", "message_id", "kind", "from", "matched_email", "subject", "first_lines"]
-BOUNCE_LIMIT = 0.03
-BOUNCE_MIN = 3
+BOUNCE_LIMIT = 0.03            # above this: slow sending (about half a day's emails)
+BOUNCE_STOP = 0.05             # above this: full stop
+BOUNCE_MIN = 3                 # fewer bounces than this never slows or stops anything
 BOUNCE_WINDOW_DAYS = 7
+LIFT_AFTER_WEEKDAYS = 2        # a stop the brake made lifts itself after 2 whole weekdays with no new bounce
+MAX_AUTO_LIFTS = 2             # ... at most twice in 30 days; the next stop waits for Anzhel
+AUTO_MARK = "It lifts itself"
+PAUSE_FILE, SLOW_FILE, LIFTS_FILE = "0_PAUSE.txt", "0_SLOW.txt", "0_auto_lift_history.csv"
 
 
 def clean_address(raw):
@@ -312,7 +317,8 @@ def run(home, passwords, today=None, fetch=None, log=print, ignore=None):
             for a in add:
                 f.write(a + "\n")
     counts["added_to_do_not_contact"] = len(add)
-    counts["paused"] = check_bounce_brake(home, today)
+    counts["brake"] = bounce_brake(home, today)
+    counts["paused"] = counts["brake"]["state"] == "pause"
     return counts
 
 
@@ -337,33 +343,135 @@ def _remember_pause(home, day):
             f.write(("paused_on\n" if new else "") + day + "\n")
 
 
-def check_bounce_brake(home, today):
-    """Pause all sending when bounces pass 3% (and at least 3 bounces) over the last 7 days.
-    First emails and follow-ups both count. After a pause is lifted the brake starts fresh: sends and
-    bounces up to the pause day are not counted again (those addresses are already on do-not-contact)."""
-    pause = os.path.join(home, "0_PAUSE.txt")
+def _delete_list(home):
+    """Files removed by the run that must also be removed on Drive (the workflow saves with 'rclone copy',
+    which never deletes). Kept next to the Frontage folder, so it is not uploaded itself."""
+    return os.environ.get("FRONTAGE_DELETE_LIST") or os.path.join(
+        os.path.dirname(os.path.abspath(home)), "delete_on_drive.txt")
+
+
+def _drop(home, name):
+    path = os.path.join(home, name)
+    if os.path.exists(path):
+        os.remove(path)
+    with open(_delete_list(home), "a", encoding="utf-8") as f:
+        f.write(name + "\n")
+
+
+def _whole_weekdays_between(a, b):
+    """Mon-Fri days strictly after date a and strictly before date b."""
+    n, d = 0, a + dt.timedelta(days=1)
+    while d < b:
+        n += d.weekday() < 5
+        d += dt.timedelta(days=1)
+    return n
+
+
+def _lifts(home):
+    return _read(os.path.join(home, LIFTS_FILE))
+
+
+def _auto_lifts_lately(home, today, other_than=""):
+    lf = _lifts(home)
+    if not len(lf) or "lifted_on" not in lf:
+        return 0
+    since = (today - dt.timedelta(days=30)).isoformat()
+    recent = lf[(lf["lifted_on"] >= since) & (lf["paused_on"] != other_than)]
+    return recent["paused_on"].nunique()
+
+
+def _bounce_days(rep):
+    if not len(rep) or "kind" not in rep:
+        return pd.Series(dtype=str)
+    return rep.loc[rep["kind"] == "bounce", "received"].astype(str)
+
+
+def bounce_brake(home, today):
+    """The bounce brake, three steps (bounces over the last 7 days, first emails and follow-ups both count):
+      up to 3%        -> normal sending
+      over 3%, to 5%  -> SLOW: 0_SLOW.txt on Drive, the sender sends about half (slow_daily_max in the config)
+      over 5%         -> STOP: 0_PAUSE.txt on Drive, nothing is sent
+    Each needs at least 3 bounces. Bounced addresses are already on do-not-contact, so a stop the brake made
+    lifts itself after 2 whole weekdays with no new bounce, at most twice in 30 days; the next stop waits for
+    Anzhel (he deletes 0_PAUSE.txt). A stop he wrote himself never lifts itself.
+    After any stop the count starts fresh (sends and bounces up to then are not counted again).
+    Returns {"state": normal|slow|pause, "event": None|slow_on|slow_off|pause_on|lifted, "text": ...}."""
+    pause, slow = os.path.join(home, PAUSE_FILE), os.path.join(home, SLOW_FILE)
+    rep = _read(os.path.join(home, "0_replies.csv"))
+    lifted = None
     if os.path.exists(pause):
         for d in _pause_days(home):
             _remember_pause(home, d)
-        return True
+        body = open(pause, encoding="utf-8").read()
+        m = re.search(r"paused on (\d{4}-\d{2}-\d{2})", body)
+        if not (m and AUTO_MARK in body):
+            return {"state": "pause", "event": None, "text": body}
+        day = m.group(1)
+        last = max([day] + [d for d in _bounce_days(rep) if d >= day])
+        if _whole_weekdays_between(dt.date.fromisoformat(last[:10]), today) < LIFT_AFTER_WEEKDAYS:
+            return {"state": "pause", "event": None, "text": body}
+        _drop(home, PAUSE_FILE)
+        path = os.path.join(home, LIFTS_FILE)
+        if day in set(_lifts(home).get("paused_on", pd.Series(dtype=str))):
+            lifted = None                       # an old copy of a stop already lifted: no second alert
+        else:
+            first = not os.path.exists(path)
+            with open(path, "a", encoding="utf-8") as f:
+                f.write(("paused_on,lifted_on\n" if first else "") + f"{day},{today.isoformat()}\n")
+            lifted = (f"The stop from {day} lifted itself today ({today.isoformat()}): {LIFT_AFTER_WEEKDAYS} whole "
+                      f"weekdays passed with no new bounce, and every bounced address is on do-not-contact.\n"
+                      f"Sending goes on with the next run. The bounce count starts fresh from today.")
+
     start = (today - dt.timedelta(days=BOUNCE_WINDOW_DAYS)).isoformat()
     paused = _pause_days(home)
     if paused:
-        after_pause = (dt.date.fromisoformat(paused[-1]) + dt.timedelta(days=1)).isoformat()
-        start = max(start, after_pause)
+        start = max(start, (dt.date.fromisoformat(paused[-1]) + dt.timedelta(days=1)).isoformat())
+    lf = _lifts(home)
+    if len(lf) and "lifted_on" in lf:
+        start = max([start] + [d for d in lf["lifted_on"] if d])
     n_sent = 0
     for name in ("0_sent_log.csv", "0_followup_log.csv"):
         log = _read(os.path.join(home, name))
         if len(log) and "sent_at" in log:
             n_sent += int((log["sent_at"].str[:10] >= start).sum())
-    rep = _read(os.path.join(home, "0_replies.csv"))
-    n_bounce = int(((rep.get("kind", pd.Series(dtype=str)) == "bounce")
-                    & (rep.get("received", pd.Series(dtype=str)) >= start)).sum()) if len(rep) else 0
-    if n_sent and n_bounce >= BOUNCE_MIN and n_bounce / n_sent > BOUNCE_LIMIT:
+    n_bounce = int((_bounce_days(rep) >= start).sum())
+    rate = n_bounce / n_sent if n_sent else 0.0
+    numbers = (f"{n_bounce} bounces from {n_sent} emails since {start} ({rate:.1%}; "
+               f"slow above {BOUNCE_LIMIT:.0%}, stop above {BOUNCE_STOP:.0%})")
+    was_slow = os.path.exists(slow)
+
+    if n_sent and n_bounce >= BOUNCE_MIN and rate > BOUNCE_STOP:
+        if was_slow:
+            _drop(home, SLOW_FILE)
+        if _auto_lifts_lately(home, today) < MAX_AUTO_LIFTS:
+            how = (f"{AUTO_MARK} after {LIFT_AFTER_WEEKDAYS} whole weekdays with no new bounce "
+                   f"(bounced addresses are already on do-not-contact).\n"
+                   f"To send again sooner: check the bounced addresses in 0_replies.csv, then delete this file.\n")
+        else:
+            how = (f"This is stop number {MAX_AUTO_LIFTS + 1} in 30 days, so it does NOT lift itself: something is wrong "
+                   f"with the address list.\nAsk Claude to check the bounced addresses in 0_replies.csv, "
+                   f"then delete this file to send again.\n")
+        text = f"Sending paused on {today.isoformat()}: {numbers}.\n" + how
         with open(pause, "w", encoding="utf-8") as f:
-            f.write(f"Sending paused on {today.isoformat()}: {n_bounce} bounces from {n_sent} emails in "
-                    f"the last {BOUNCE_WINDOW_DAYS} days ({n_bounce / n_sent:.1%}, limit {BOUNCE_LIMIT:.0%}).\n"
-                    f"Check the bounced addresses in 0_replies.csv, then delete this file to send again.\n")
+            f.write(text)
         _remember_pause(home, today.isoformat())
-        return True
-    return False
+        return {"state": "pause", "event": "pause_on", "text": (lifted + "\n\n" if lifted else "") + text}
+    if n_sent and n_bounce >= BOUNCE_MIN and rate > BOUNCE_LIMIT:
+        text = (f"Slow sending since {today.isoformat()}: {numbers}.\nThe sender sends about half as many emails "
+                f"a day. Back to normal by itself when bounces drop to {BOUNCE_LIMIT:.0%} or below.\n")
+        if not was_slow:
+            with open(slow, "w", encoding="utf-8") as f:
+                f.write(text)
+        event = "slow_on" if not was_slow else None
+        return {"state": "slow", "event": event or ("lifted" if lifted else None),
+                "text": (lifted + "\n\n" if lifted else "") + (text if event else open(slow, encoding="utf-8").read())}
+    if was_slow:
+        _drop(home, SLOW_FILE)
+        return {"state": "normal", "event": "lifted" if lifted else "slow_off",
+                "text": (lifted + "\n\n" if lifted else "") + f"Back to normal speed: {numbers}.\n"}
+    return {"state": "normal", "event": "lifted" if lifted else None, "text": lifted or ""}
+
+
+def check_bounce_brake(home, today):
+    """True when sending is stopped (0_PAUSE.txt). See bounce_brake."""
+    return bounce_brake(home, today)["state"] == "pause"
