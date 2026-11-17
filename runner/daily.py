@@ -357,7 +357,11 @@ def run(mode):
             settings["BUTTONS"] = "True" if CONFIG["buttons"] else "False"
         if os.path.exists(os.path.join(DRIVE, replies.SLOW_FILE)) and "DOMAIN_DAILY_MAX = " in nb_src:
             settings["DOMAIN_DAILY_MAX"] = str(int(CONFIG.get("slow_daily_max", 24)))
-            say(f"[sender] SLOW — bounces over 3%: at most {settings['DOMAIN_DAILY_MAX']} emails today", log, note=True)
+            safe = "SAFE_ONLY = " in nb_src
+            if safe:
+                settings["SAFE_ONLY"] = "True"        # only addresses on the business's own website domain
+            say(f"[sender] SLOW — bounces over 3%: at most {settings['DOMAIN_DAILY_MAX']} emails today"
+                + (", only addresses on the business's own website domain" if safe else ""), log, note=True)
         ok &= run_step("sender", log, settings)
         after, per_box = sent_today()
         say(f"[sender] sent now: {after - before}   today in total: {after}   per mailbox: {per_box}", log, note=True)
