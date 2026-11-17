@@ -2,11 +2,14 @@
 
     python tools/upgrade_sender_v26.py OLD.ipynb NEW.ipynb
 
-The only change (Anzhel's decision, 17 Nov 2026): a SAFE_ONLY setting for the bounce brake's slow mode.
+Two changes (Anzhel's decisions, 17 Nov 2026):
+1. SAFE_ONLY setting for the bounce brake's slow mode.
 With SAFE_ONLY = True the sender only emails addresses on the business's own website domain
 (info@pub.ie for pub.ie or www.pub.ie), the addresses least likely to bounce. The others stay pending
 and are sent normally once the brake is back to normal. The runner sets SAFE_ONLY = True while
 0_SLOW.txt is on Drive. Default False: nothing changes in normal sending.
+2. Small places first: leads are sorted by Target_Tier (1 = small owner-run, 2 = hotels / chains / big
+   venues, written by runner/targeting.py), then by Lead_Score as before. No Target_Tier = everyone tier 1.
 Text, limits, pacing, logging, do-not-contact: untouched. Stops if v2.5 isn't exactly as expected.
 """
 import json
@@ -48,6 +51,12 @@ def eligible_leads(df):
 
     eligible["_score"] = (pd.to_numeric(eligible["Lead_Score"], errors="coerce").fillna(0)
 '''),
+    ('''    return eligible.sort_values("_score", ascending=False)
+''', '''    # Small owner-run places first (Target_Tier 1), hotels / chains / big venues after them (Target_Tier 2).
+    eligible["_tier"] = (pd.to_numeric(eligible["Target_Tier"], errors="coerce").fillna(1)
+                         if "Target_Tier" in eligible.columns else 1)
+    return eligible.sort_values(["_tier", "_score"], ascending=[True, False])
+'''),
     ('FRONTAGE SENDER v2.5 (one domain, long/short test, buttons)',
      'FRONTAGE SENDER v2.6 (one domain, long/short test, buttons, safe-only slow mode)'),
 ]
@@ -74,7 +83,7 @@ def main(old_path, new_path):
         else:
             c["source"] = src.replace("v2.5", "v2.6").splitlines(keepends=True)
     json.dump(nb, open(new_path, "w", encoding="utf-8"), indent=1, ensure_ascii=False)
-    print("Sender v2.6 made: SAFE_ONLY slow-mode setting added; everything else unchanged.")
+    print("Sender v2.6 made: SAFE_ONLY slow mode and small-places-first order added; everything else unchanged.")
 
 
 if __name__ == "__main__":
